@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { FirmStatusBadge } from "./FirmStatusBadge";
 
 function statusDotColor(status?: string): string {
   switch (status) {
@@ -61,6 +62,14 @@ export function CompanySwitcher() {
         ))}
         {sidebarCompanies.length === 0 && (
           <DropdownMenuItem disabled>No companies</DropdownMenuItem>
+        )}
+        {selectedCompany && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-2 py-1.5">
+              <FirmStatusBadge companyId={selectedCompany.id} />
+            </div>
+          </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
