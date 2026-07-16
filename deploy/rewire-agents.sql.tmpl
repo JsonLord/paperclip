@@ -1,0 +1,21 @@
+-- Host-only rewrite of http-adapter agent URLs: point any agent whose adapter URL
+-- targets the (now unreachable) laptop localhost at the public funnel host instead.
+-- Path and headers (auth) are preserved. openoperator.hf.space and other public
+-- https URLs are left untouched because the WHERE clause only matches loopback hosts.
+-- ${DESK_AGENT_HOST} is injected by envsubst (e.g. https://debian-devil.tail3f341b.ts.net:8443).
+UPDATE agents
+SET adapter_config = jsonb_set(
+      adapter_config,
+      '{url}',
+      to_jsonb(
+        regexp_replace(
+          adapter_config->>'url',
+          '^https?://(localhost|127\.0\.0\.1|host\.docker\.internal)(:[0-9]+)?',
+          '${DESK_AGENT_HOST}'
+        )
+      )
+    ),
+    updated_at = NOW()
+WHERE adapter_type = 'http'
+  AND adapter_config ? 'url'
+  AND adapter_config->>'url' ~ '^https?://(localhost|127\.0\.0\.1|host\.docker\.internal)';

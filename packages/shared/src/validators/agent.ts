@@ -11,6 +11,25 @@ export const agentPermissionsSchema = z.object({
   canCreateAgents: z.boolean().optional().default(false),
 });
 
+export const agentInstructionsBundleModeSchema = z.enum(["managed", "external"]);
+
+export const updateAgentInstructionsBundleSchema = z.object({
+  mode: agentInstructionsBundleModeSchema.optional(),
+  rootPath: z.string().trim().min(1).nullable().optional(),
+  entryFile: z.string().trim().min(1).optional(),
+  clearLegacyPromptTemplate: z.boolean().optional().default(false),
+});
+
+export type UpdateAgentInstructionsBundle = z.infer<typeof updateAgentInstructionsBundleSchema>;
+
+export const upsertAgentInstructionsFileSchema = z.object({
+  path: z.string().trim().min(1),
+  content: z.string(),
+  clearLegacyPromptTemplate: z.boolean().optional().default(false),
+});
+
+export type UpsertAgentInstructionsFile = z.infer<typeof upsertAgentInstructionsFileSchema>;
+
 const adapterConfigSchema = z.record(z.unknown()).superRefine((value, ctx) => {
   const envValue = value.env;
   if (envValue === undefined) return;
@@ -31,8 +50,13 @@ export const createAgentSchema = z.object({
   icon: z.enum(AGENT_ICON_NAMES).optional().nullable(),
   reportsTo: z.string().uuid().optional().nullable(),
   capabilities: z.string().optional().nullable(),
-  adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),
-  adapterConfig: adapterConfigSchema.optional().default({}),
+  desiredSkills: z.array(z.string().min(1)).optional(),
+  // No static default here: the actual default is role-conditional
+  // (dev-team roles -> hermes_local, everyone else -> http/OpenOperator) and
+  // is resolved server-side in the agent-creation route, since Zod defaults
+  // can't depend on another field's value.
+  adapterType: z.enum(AGENT_ADAPTER_TYPES).optional(),
+  adapterConfig: adapterConfigSchema.optional(),
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   permissions: agentPermissionsSchema.optional(),
@@ -53,6 +77,7 @@ export const updateAgentSchema = createAgentSchema
   .partial()
   .extend({
     permissions: z.never().optional(),
+    replaceAdapterConfig: z.boolean().optional(),
     status: z.enum(AGENT_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
   });
@@ -100,6 +125,7 @@ export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema
 
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
+  canAssignTasks: z.boolean(),
 });
 
 export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;

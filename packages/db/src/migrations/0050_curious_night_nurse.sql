@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN "homarr_board_slug" text;

@@ -1,0 +1,36 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 1933,
+    "root_api_key": "${OPENVIKING_ROOT_API_KEY}",
+    "cors_origins": ["*"]
+  },
+  "storage": {
+    "workspace": "/paperclip/.openviking/data",
+    "agfs": { "backend": "local" },
+    "vectordb": { "backend": "local" }
+  },
+  "embedding": {
+    "dense": {
+      "api_base": "https://api.helmholtz-blablador.fz-juelich.de/v1",
+      "api_key": "${BLABLADOR_TOKEN}",
+      "provider": "openai",
+      "dimension": 4096,
+      "model": "alias-embeddings",
+      "input": "text"
+    }
+  },
+  "vlm": {
+    "api_base": "https://api.helmholtz-blablador.fz-juelich.de/v1",
+    "api_key": "${BLABLADOR_TOKEN}",
+    "provider": "openai",
+    "max_retries": 2,
+    "model": "${BLABLADOR_VLM_MODEL}",
+    "backup": {
+      "api_base": "https://api.helmholtz-blablador.fz-juelich.de/v1",
+      "api_key": "${BLABLADOR_TOKEN}",
+      "provider": "openai",
+      "model": "${BLABLADOR_MODEL}"
+    }
+  }
+}

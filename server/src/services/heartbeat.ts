@@ -15,6 +15,7 @@ import {
   issues,
   projects,
   projectWorkspaces,
+  routines,
 } from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -25,6 +26,7 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { costService } from "./costs.js";
+import { companySkillService } from "./company-skills.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
@@ -44,6 +46,7 @@ import { workspaceOperationService } from "./workspace-operations.js";
 import {
   buildExecutionWorkspaceAdapterConfig,
   gateProjectExecutionWorkspacePolicy,
+  issueExecutionWorkspaceModeForPersistedWorkspace,
   parseIssueExecutionWorkspaceSettings,
   parseProjectExecutionWorkspacePolicy,
   resolveExecutionWorkspaceMode,
@@ -60,6 +63,7 @@ const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
+const DETACHED_PROCESS_ERROR_CODE = "process_detached";
 const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 const MANAGED_WORKSPACE_GIT_CLONE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -163,6 +167,10 @@ const heartbeatRunListColumns = {
   stderrExcerpt: sql<string | null>`NULL`.as("stderrExcerpt"),
   errorCode: heartbeatRuns.errorCode,
   externalRunId: heartbeatRuns.externalRunId,
+  processPid: heartbeatRuns.processPid,
+  processStartedAt: heartbeatRuns.processStartedAt,
+  retryOfRunId: heartbeatRuns.retryOfRunId,
+  processLossRetryCount: heartbeatRuns.processLossRetryCount,
   contextSnapshot: heartbeatRuns.contextSnapshot,
   createdAt: heartbeatRuns.createdAt,
   updatedAt: heartbeatRuns.updatedAt,
@@ -316,6 +324,51 @@ async function resolveLedgerScopeForRun(
   return {
     issueId: issue?.id ?? null,
     projectId: issue?.projectId ?? contextProjectId,
+  };
+}
+
+type ResumeSessionRow = {
+  sessionParamsJson: Record<string, unknown> | null;
+  sessionDisplayId: string | null;
+  lastRunId: string | null;
+};
+
+export function buildExplicitResumeSessionOverride(input: {
+  resumeFromRunId: string;
+  resumeRunSessionIdBefore: string | null;
+  resumeRunSessionIdAfter: string | null;
+  taskSession: ResumeSessionRow | null;
+  sessionCodec: AdapterSessionCodec;
+}) {
+  const desiredDisplayId = truncateDisplayId(
+    input.resumeRunSessionIdAfter ?? input.resumeRunSessionIdBefore,
+  );
+  const taskSessionParams = normalizeSessionParams(
+    input.sessionCodec.deserialize(input.taskSession?.sessionParamsJson ?? null),
+  );
+  const taskSessionDisplayId = truncateDisplayId(
+    input.taskSession?.sessionDisplayId ??
+      (input.sessionCodec.getDisplayId ? input.sessionCodec.getDisplayId(taskSessionParams) : null) ??
+      readNonEmptyString(taskSessionParams?.sessionId),
+  );
+  const canReuseTaskSessionParams =
+    input.taskSession != null &&
+    (
+      input.taskSession.lastRunId === input.resumeFromRunId ||
+      (!!desiredDisplayId && taskSessionDisplayId === desiredDisplayId)
+    );
+  const sessionParams =
+    canReuseTaskSessionParams
+      ? taskSessionParams
+      : desiredDisplayId
+        ? { sessionId: desiredDisplayId }
+        : null;
+  const sessionDisplayId = desiredDisplayId ?? (canReuseTaskSessionParams ? taskSessionDisplayId : null);
+
+  if (!sessionDisplayId && !sessionParams) return null;
+  return {
+    sessionDisplayId,
+    sessionParams,
   };
 }
 
@@ -497,6 +550,13 @@ export function shouldResetTaskSessionForWake(
   return false;
 }
 
+export function formatRuntimeWorkspaceWarningLog(warning: string) {
+  return {
+    stream: "stdout" as const,
+    chunk: `[paperclip] ${warning}\n`,
+  };
+}
+
 function describeSessionResetReason(
   contextSnapshot: Record<string, unknown> | null | undefined,
 ) {
@@ -589,6 +649,26 @@ function runTaskKey(run: typeof heartbeatRuns.$inferSelect) {
 
 function isSameTaskScope(left: string | null, right: string | null) {
   return (left ?? null) === (right ?? null);
+}
+
+function isTrackedLocalChildProcessAdapter(adapterType: string) {
+  return SESSIONED_LOCAL_ADAPTERS.has(adapterType);
+}
+
+// A positive liveness check means some process currently owns the PID.
+// On Linux, PIDs can be recycled, so this is a best-effort signal rather
+// than proof that the original child is still alive.
+function isProcessAlive(pid: number | null | undefined) {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === "EPERM") return true;
+    if (code === "ESRCH") return false;
+    return false;
+  }
 }
 
 function truncateDisplayId(value: string | null | undefined, max = 128) {
@@ -688,9 +768,13 @@ function resolveNextSessionState(input: {
 
 export function heartbeatService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
+  const getCurrentUserRedactionOptions = async () => ({
+    enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
+  });
 
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
+  const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
@@ -938,6 +1022,57 @@ export function heartbeatService(db: Db) {
 
     const runtimeForRun = await getRuntimeState(agent.id);
     return runtimeForRun?.sessionId ?? null;
+  }
+
+  async function resolveExplicitResumeSessionOverride(
+    agent: typeof agents.$inferSelect,
+    payload: Record<string, unknown> | null,
+    taskKey: string | null,
+  ) {
+    const resumeFromRunId = readNonEmptyString(payload?.resumeFromRunId);
+    if (!resumeFromRunId) return null;
+
+    const resumeRun = await db
+      .select({
+        id: heartbeatRuns.id,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+        sessionIdBefore: heartbeatRuns.sessionIdBefore,
+        sessionIdAfter: heartbeatRuns.sessionIdAfter,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.id, resumeFromRunId),
+          eq(heartbeatRuns.companyId, agent.companyId),
+          eq(heartbeatRuns.agentId, agent.id),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!resumeRun) return null;
+
+    const resumeContext = parseObject(resumeRun.contextSnapshot);
+    const resumeTaskKey = deriveTaskKey(resumeContext, null) ?? taskKey;
+    const resumeTaskSession = resumeTaskKey
+      ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, resumeTaskKey)
+      : null;
+    const sessionCodec = getAdapterSessionCodec(agent.adapterType);
+    const sessionOverride = buildExplicitResumeSessionOverride({
+      resumeFromRunId,
+      resumeRunSessionIdBefore: resumeRun.sessionIdBefore,
+      resumeRunSessionIdAfter: resumeRun.sessionIdAfter,
+      taskSession: resumeTaskSession,
+      sessionCodec,
+    });
+    if (!sessionOverride) return null;
+
+    return {
+      resumeFromRunId,
+      taskKey: resumeTaskKey,
+      issueId: readNonEmptyString(resumeContext.issueId),
+      taskId: readNonEmptyString(resumeContext.taskId) ?? readNonEmptyString(resumeContext.issueId),
+      sessionDisplayId: sessionOverride.sessionDisplayId,
+      sessionParams: sessionOverride.sessionParams,
+    };
   }
 
   async function resolveWorkspaceForRun(
@@ -1286,8 +1421,13 @@ export function heartbeatService(db: Db) {
       payload?: Record<string, unknown>;
     },
   ) {
-    const sanitizedMessage = event.message ? redactCurrentUserText(event.message) : event.message;
-    const sanitizedPayload = event.payload ? redactCurrentUserValue(event.payload) : event.payload;
+    const currentUserRedactionOptions = await getCurrentUserRedactionOptions();
+    const sanitizedMessage = event.message
+      ? redactCurrentUserText(event.message, currentUserRedactionOptions)
+      : event.message;
+    const sanitizedPayload = event.payload
+      ? redactCurrentUserValue(event.payload, currentUserRedactionOptions)
+      : event.payload;
 
     await db.insert(heartbeatRunEvents).values({
       companyId: run.companyId,
@@ -1317,6 +1457,156 @@ export function heartbeatService(db: Db) {
         payload: sanitizedPayload ?? null,
       },
     });
+  }
+
+  async function nextRunEventSeq(runId: string) {
+    const [row] = await db
+      .select({ maxSeq: sql<number | null>`max(${heartbeatRunEvents.seq})` })
+      .from(heartbeatRunEvents)
+      .where(eq(heartbeatRunEvents.runId, runId));
+    return Number(row?.maxSeq ?? 0) + 1;
+  }
+
+  async function persistRunProcessMetadata(
+    runId: string,
+    meta: { pid: number; startedAt: string },
+  ) {
+    const startedAt = new Date(meta.startedAt);
+    return db
+      .update(heartbeatRuns)
+      .set({
+        processPid: meta.pid,
+        processStartedAt: Number.isNaN(startedAt.getTime()) ? new Date() : startedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(heartbeatRuns.id, runId))
+      .returning()
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function clearDetachedRunWarning(runId: string) {
+    const updated = await db
+      .update(heartbeatRuns)
+      .set({
+        error: null,
+        errorCode: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.status, "running"), eq(heartbeatRuns.errorCode, DETACHED_PROCESS_ERROR_CODE)))
+      .returning()
+      .then((rows) => rows[0] ?? null);
+    if (!updated) return null;
+
+    await appendRunEvent(updated, await nextRunEventSeq(updated.id), {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "info",
+      message: "Detached child process reported activity; cleared detached warning",
+    });
+    return updated;
+  }
+
+  async function enqueueProcessLossRetry(
+    run: typeof heartbeatRuns.$inferSelect,
+    agent: typeof agents.$inferSelect,
+    now: Date,
+  ) {
+    const contextSnapshot = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(contextSnapshot.issueId);
+    const taskKey = deriveTaskKey(contextSnapshot, null);
+    const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
+    const retryContextSnapshot = {
+      ...contextSnapshot,
+      retryOfRunId: run.id,
+      wakeReason: "process_lost_retry",
+      retryReason: "process_lost",
+    };
+
+    const queued = await db.transaction(async (tx) => {
+      const wakeupRequest = await tx
+        .insert(agentWakeupRequests)
+        .values({
+          companyId: run.companyId,
+          agentId: run.agentId,
+          source: "automation",
+          triggerDetail: "system",
+          reason: "process_lost_retry",
+          payload: {
+            ...(issueId ? { issueId } : {}),
+            retryOfRunId: run.id,
+          },
+          status: "queued",
+          requestedByActorType: "system",
+          requestedByActorId: null,
+          updatedAt: now,
+        })
+        .returning()
+        .then((rows) => rows[0]);
+
+      const retryRun = await tx
+        .insert(heartbeatRuns)
+        .values({
+          companyId: run.companyId,
+          agentId: run.agentId,
+          invocationSource: "automation",
+          triggerDetail: "system",
+          status: "queued",
+          wakeupRequestId: wakeupRequest.id,
+          contextSnapshot: retryContextSnapshot,
+          sessionIdBefore: sessionBefore,
+          retryOfRunId: run.id,
+          processLossRetryCount: (run.processLossRetryCount ?? 0) + 1,
+          updatedAt: now,
+        })
+        .returning()
+        .then((rows) => rows[0]);
+
+      await tx
+        .update(agentWakeupRequests)
+        .set({
+          runId: retryRun.id,
+          updatedAt: now,
+        })
+        .where(eq(agentWakeupRequests.id, wakeupRequest.id));
+
+      if (issueId) {
+        await tx
+          .update(issues)
+          .set({
+            executionRunId: retryRun.id,
+            executionAgentNameKey: normalizeAgentNameKey(agent.name),
+            executionLockedAt: now,
+            updatedAt: now,
+          })
+          .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId), eq(issues.executionRunId, run.id)));
+      }
+
+      return retryRun;
+    });
+
+    publishLiveEvent({
+      companyId: queued.companyId,
+      type: "heartbeat.run.queued",
+      payload: {
+        runId: queued.id,
+        agentId: queued.agentId,
+        invocationSource: queued.invocationSource,
+        triggerDetail: queued.triggerDetail,
+        wakeupRequestId: queued.wakeupRequestId,
+      },
+    });
+
+    await appendRunEvent(queued, 1, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "warn",
+      message: "Queued automatic retry after orphaned child process was confirmed dead",
+      payload: {
+        retryOfRunId: run.id,
+      },
+    });
+
+    return queued;
   }
 
   function parseHeartbeatPolicy(agent: typeof agents.$inferSelect) {
@@ -1446,13 +1736,17 @@ export function heartbeatService(db: Db) {
 
     // Find all runs stuck in "running" state (queued runs are legitimately waiting; resumeQueuedRuns handles them)
     const activeRuns = await db
-      .select()
+      .select({
+        run: heartbeatRuns,
+        adapterType: agents.adapterType,
+      })
       .from(heartbeatRuns)
+      .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
       .where(eq(heartbeatRuns.status, "running"));
 
     const reaped: string[] = [];
 
-    for (const run of activeRuns) {
+    for (const { run, adapterType } of activeRuns) {
       if (runningProcesses.has(run.id) || activeRunExecutions.has(run.id)) continue;
 
       // Apply staleness threshold to avoid false positives
@@ -1461,25 +1755,69 @@ export function heartbeatService(db: Db) {
         if (now.getTime() - refTime < staleThresholdMs) continue;
       }
 
-      await setRunStatus(run.id, "failed", {
-        error: "Process lost -- server may have restarted",
+      const tracksLocalChild = isTrackedLocalChildProcessAdapter(adapterType);
+      if (tracksLocalChild && run.processPid && isProcessAlive(run.processPid)) {
+        if (run.errorCode !== DETACHED_PROCESS_ERROR_CODE) {
+          const detachedMessage = `Lost in-memory process handle, but child pid ${run.processPid} is still alive`;
+          const detachedRun = await setRunStatus(run.id, "running", {
+            error: detachedMessage,
+            errorCode: DETACHED_PROCESS_ERROR_CODE,
+          });
+          if (detachedRun) {
+            await appendRunEvent(detachedRun, await nextRunEventSeq(detachedRun.id), {
+              eventType: "lifecycle",
+              stream: "system",
+              level: "warn",
+              message: detachedMessage,
+              payload: {
+                processPid: run.processPid,
+              },
+            });
+          }
+        }
+        continue;
+      }
+
+      const shouldRetry = tracksLocalChild && !!run.processPid && (run.processLossRetryCount ?? 0) < 1;
+      const baseMessage = run.processPid
+        ? `Process lost -- child pid ${run.processPid} is no longer running`
+        : "Process lost -- server may have restarted";
+
+      let finalizedRun = await setRunStatus(run.id, "failed", {
+        error: shouldRetry ? `${baseMessage}; retrying once` : baseMessage,
         errorCode: "process_lost",
         finishedAt: now,
       });
       await setWakeupStatus(run.wakeupRequestId, "failed", {
         finishedAt: now,
-        error: "Process lost -- server may have restarted",
+        error: shouldRetry ? `${baseMessage}; retrying once` : baseMessage,
       });
-      const updatedRun = await getRun(run.id);
-      if (updatedRun) {
-        await appendRunEvent(updatedRun, 1, {
-          eventType: "lifecycle",
-          stream: "system",
-          level: "error",
-          message: "Process lost -- server may have restarted",
-        });
-        await releaseIssueExecutionAndPromote(updatedRun);
+      if (!finalizedRun) finalizedRun = await getRun(run.id);
+      if (!finalizedRun) continue;
+
+      let retriedRun: typeof heartbeatRuns.$inferSelect | null = null;
+      if (shouldRetry) {
+        const agent = await getAgent(run.agentId);
+        if (agent) {
+          retriedRun = await enqueueProcessLossRetry(finalizedRun, agent, now);
+        }
+      } else {
+        await releaseIssueExecutionAndPromote(finalizedRun);
       }
+
+      await appendRunEvent(finalizedRun, await nextRunEventSeq(finalizedRun.id), {
+        eventType: "lifecycle",
+        stream: "system",
+        level: "error",
+        message: shouldRetry
+          ? `${baseMessage}; queued retry ${retriedRun?.id ?? ""}`.trim()
+          : baseMessage,
+        payload: {
+          ...(run.processPid ? { processPid: run.processPid } : {}),
+          ...(retriedRun ? { retryRunId: retriedRun.id } : {}),
+        },
+      });
+
       await finalizeAgentStatus(run.agentId, "failed");
       await startNextQueuedRunForAgent(run.agentId);
       runningProcesses.delete(run.id);
@@ -1677,12 +2015,40 @@ export function heartbeatService(db: Db) {
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
+    // V2: Per-project session — use project session as primary if available
+    // V2: Per-project session — normalize to same shape as taskSession
+    let v2ProjectSession: { sessionParamsJson: Record<string, unknown> | null; sessionDisplayId: string | null } | null = null;
+    if (executionProjectId) {
+      try {
+        const { sessionResolverService } = await import("./agent-runtime/session-resolver.js");
+        const sessionResolver = sessionResolverService(db);
+        const rawSession = await sessionResolver.resolveSession(agent.id, agent.adapterType, executionProjectId);
+        if (rawSession) {
+          v2ProjectSession = {
+            // agent_project_sessions uses "sessionParams" column; normalize for heartbeat
+            sessionParamsJson: (rawSession as { sessionParams?: Record<string, unknown> | null }).sessionParams ?? null,
+            sessionDisplayId: rawSession.sessionDisplayId ?? null,
+          };
+        }
+      } catch (err) {
+        logger.warn({ err, agentId: agent.id }, "V2: failed to resolve project session, falling back to task session");
+      }
+    }
     const resetTaskSession = shouldResetTaskSessionForWake(context);
     const sessionResetReason = describeSessionResetReason(context);
-    const taskSessionForRun = resetTaskSession ? null : taskSession;
-    const previousSessionParams = normalizeSessionParams(
-      sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
+    const taskSessionForRun = resetTaskSession ? null : (v2ProjectSession ?? taskSession);
+    const explicitResumeSessionParams = normalizeSessionParams(
+      sessionCodec.deserialize(parseObject(context.resumeSessionParams)),
     );
+    const explicitResumeSessionDisplayId = truncateDisplayId(
+      readNonEmptyString(context.resumeSessionDisplayId) ??
+        (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(explicitResumeSessionParams) : null) ??
+        readNonEmptyString(explicitResumeSessionParams?.sessionId),
+    );
+    const previousSessionParams =
+      explicitResumeSessionParams ??
+      (explicitResumeSessionDisplayId ? { sessionId: explicitResumeSessionDisplayId } : null) ??
+      normalizeSessionParams(sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null));
     const config = parseObject(agent.adapterConfig);
     const executionWorkspaceMode = resolveExecutionWorkspaceMode({
       projectPolicy: projectExecutionWorkspacePolicy,
@@ -1709,6 +2075,11 @@ export function heartbeatService(db: Db) {
       agent.companyId,
       mergedConfig,
     );
+    const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId);
+    const runtimeConfig = {
+      ...resolvedConfig,
+      paperclipRuntimeSkills: runtimeSkillEntries,
+    };
     const issueRef = issueContext
       ? {
           id: issueContext.id,
@@ -1736,7 +2107,7 @@ export function heartbeatService(db: Db) {
         repoUrl: resolvedWorkspace.repoUrl,
         repoRef: resolvedWorkspace.repoRef,
       },
-      config: resolvedConfig,
+      config: runtimeConfig,
       issue: issueRef,
       agent: {
         id: agent.id,
@@ -1853,11 +2224,29 @@ export function heartbeatService(db: Db) {
         cleanupReason: null,
       });
     }
-    if (issueId && persistedExecutionWorkspace && issueRef?.executionWorkspaceId !== persistedExecutionWorkspace.id) {
-      await issuesSvc.update(issueId, {
-        executionWorkspaceId: persistedExecutionWorkspace.id,
-        ...(resolvedProjectWorkspaceId ? { projectWorkspaceId: resolvedProjectWorkspaceId } : {}),
-      });
+    if (issueId && persistedExecutionWorkspace) {
+      const nextIssueWorkspaceMode = issueExecutionWorkspaceModeForPersistedWorkspace(persistedExecutionWorkspace.mode);
+      const shouldSwitchIssueToExistingWorkspace =
+        issueRef?.executionWorkspacePreference === "reuse_existing" ||
+        executionWorkspaceMode === "isolated_workspace" ||
+        executionWorkspaceMode === "operator_branch";
+      const nextIssuePatch: Record<string, unknown> = {};
+      if (issueRef?.executionWorkspaceId !== persistedExecutionWorkspace.id) {
+        nextIssuePatch.executionWorkspaceId = persistedExecutionWorkspace.id;
+      }
+      if (resolvedProjectWorkspaceId && issueRef?.projectWorkspaceId !== resolvedProjectWorkspaceId) {
+        nextIssuePatch.projectWorkspaceId = resolvedProjectWorkspaceId;
+      }
+      if (shouldSwitchIssueToExistingWorkspace) {
+        nextIssuePatch.executionWorkspacePreference = "reuse_existing";
+        nextIssuePatch.executionWorkspaceSettings = {
+          ...(issueExecutionWorkspaceSettings ?? {}),
+          mode: nextIssueWorkspaceMode,
+        };
+      }
+      if (Object.keys(nextIssuePatch).length > 0) {
+        await issuesSvc.update(issueId, nextIssuePatch);
+      }
     }
     if (persistedExecutionWorkspace) {
       context.executionWorkspaceId = persistedExecutionWorkspace.id;
@@ -1901,7 +2290,11 @@ export function heartbeatService(db: Db) {
       repoRef: executionWorkspace.repoRef,
       branchName: executionWorkspace.branchName,
       worktreePath: executionWorkspace.worktreePath,
-      agentHome: resolveDefaultAgentWorkspaceDir(agent.id),
+      agentHome: await (async () => {
+        const home = resolveDefaultAgentWorkspaceDir(agent.id);
+        await fs.mkdir(home, { recursive: true });
+        return home;
+      })(),
     };
     context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     const runtimeServiceIntents = (() => {
@@ -1922,7 +2315,8 @@ export function heartbeatService(db: Db) {
     }
     const runtimeSessionFallback = taskKey || resetTaskSession ? null : runtime.sessionId;
     let previousSessionDisplayId = truncateDisplayId(
-      taskSessionForRun?.sessionDisplayId ??
+      explicitResumeSessionDisplayId ??
+        taskSessionForRun?.sessionDisplayId ??
         (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(runtimeSessionParams) : null) ??
         readNonEmptyString(runtimeSessionParams?.sessionId) ??
         runtimeSessionFallback,
@@ -2022,8 +2416,9 @@ export function heartbeatService(db: Db) {
         })
         .where(eq(heartbeatRuns.id, runId));
 
+      const currentUserRedactionOptions = await getCurrentUserRedactionOptions();
       const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
-        const sanitizedChunk = redactCurrentUserText(chunk);
+        const sanitizedChunk = redactCurrentUserText(chunk, currentUserRedactionOptions);
         if (stream === "stdout") stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
         if (stream === "stderr") stderrExcerpt = appendExcerpt(stderrExcerpt, sanitizedChunk);
         const ts = new Date().toISOString();
@@ -2055,7 +2450,8 @@ export function heartbeatService(db: Db) {
         });
       };
       for (const warning of runtimeWorkspaceWarnings) {
-        await onLog("stderr", `[paperclip] ${warning}\n`);
+        const logEntry = formatRuntimeWorkspaceWarningLog(warning);
+        await onLog(logEntry.stream, logEntry.chunk);
       }
       const adapterEnv = Object.fromEntries(
         Object.entries(parseObject(resolvedConfig.env)).filter(
@@ -2136,16 +2532,162 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      // V2: Load agent memories and inject as system prompt appendix
+      let memoryCleanup: (() => void) | null = null;
+      try {
+        const { memoryLoaderService } = await import("./agent-runtime/memory-loader.js");
+        const memoryLoader = memoryLoaderService(db);
+        const memories = await memoryLoader.loadMemories(agent.id, executionProjectId ?? undefined);
+        const os = await import("node:os");
+        const fsSync = await import("node:fs");
+        const pathMod = await import("node:path");
+        const tempDir = fsSync.mkdtempSync(pathMod.join(os.tmpdir(), "paperclip-memory-"));
+
+        const memorySection = memories.length > 0
+          ? `# Your Memories\n\nThese are your accumulated learnings. Use them to inform your work.\n\n${
+              memories.map((m) =>
+                `## ${m.title}\n**Category:** ${m.category} | **Source:** ${m.source} | **Scope:** ${m.scope}\n\n${m.content}`
+              ).join("\n\n---\n\n")
+            }\n\n`
+          : "";
+
+        // Self-reflection instructions — always injected so agent can write memories
+        const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://localhost:${process.env.PORT ?? 3100}`;
+        const reflectionInstructions = `# Self-Improvement Instructions
+
+At the end of your work on this task, write 1-3 memory entries about what you learned. Be specific and actionable.
+
+Call this API for each memory entry:
+\`\`\`
+POST ${apiUrl}/api/agents/me/memories
+Authorization: Bearer $PAPERCLIP_API_KEY
+Content-Type: application/json
+
+{
+  "scope": "global" | "project",
+  "projectId": "<project id if project-scoped, omit for global>",
+  "category": "pattern" | "preference" | "decision" | "learning" | "feedback",
+  "title": "<short title>",
+  "content": "<what you learned, what worked, what to do differently next time>",
+  "confidence": 0.0-1.0
+}
+\`\`\`
+
+Write memories for:
+- **Patterns** you noticed (recurring problems, solutions that work)
+- **Preferences** expressed by the team (how they like things done)
+- **Decisions** you made and why (so you don't re-litigate them)
+- **Learnings** from failures or surprises
+- **Feedback** you received (implicit or explicit)
+
+Keep memories concise and specific. Don't write vague platitudes.`;
+
+        const experimentSection = typeof context.v2ExperimentInstruction === "string"
+          ? `\n\n${context.v2ExperimentInstruction}`
+          : "";
+
+        // V2: Inject the company's Firm business-as-code context (warm-cached,
+        // per-company). Best-effort — never blocks the run on a cold render.
+        let firmSection = "";
+        try {
+          const { firmService } = await import("./firm.js");
+          const firmContext = await firmService().getContext({ companyId: agent.companyId });
+          if (firmContext && firmContext.trim().length > 0) {
+            firmSection = `# Firm Context\n\n${firmContext}\n\n---\n\n`;
+          }
+        } catch (firmErr) {
+          logger.warn({ err: firmErr, agentId: agent.id, runId: run.id }, "V2: failed to load firm context");
+        }
+
+        const memoryContent = firmSection + memorySection + reflectionInstructions + experimentSection;
+        const memoryPath = pathMod.join(tempDir, "agent-memory.md");
+        fsSync.writeFileSync(memoryPath, memoryContent);
+        context.paperclipMemoryFilePath = memoryPath;
+        logger.info(
+          { agentId: agent.id, runId: run.id, memoryCount: memories.length },
+          "V2: injecting agent memories into run",
+        );
+        memoryCleanup = () => {
+          try { fsSync.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        };
+      } catch (memErr) {
+        logger.warn({ err: memErr, agentId: agent.id, runId: run.id }, "V2: failed to load agent memories");
+      }
+
+      // V2 Layer 3: Inject active experiment approach into context
+      try {
+        const { agentExperiments: expTable } = await import("@paperclipai/db");
+        const activeExps = await db
+          .select()
+          .from(expTable)
+          .where(and(eq(expTable.agentId, agent.id), eq(expTable.status, "running")))
+          .limit(1);
+
+        if (activeExps[0]) {
+          const exp = activeExps[0];
+          // Alternate between approaches based on run count (simple round-robin)
+          const totalRuns = exp.runsA + exp.runsB;
+          const useApproachA = totalRuns % 2 === 0;
+          const approach = useApproachA ? "a" : "b";
+          const approachText = useApproachA ? exp.approachA : exp.approachB;
+
+          context.v2ExperimentApproach = approach;
+          context.v2ExperimentId = exp.id;
+          context.v2ExperimentInstruction = `\n\n## Active Experiment\nHypothesis: ${exp.hypothesis}\nFor this run, use **Approach ${approach.toUpperCase()}**: ${approachText}`;
+
+          logger.info(
+            { experimentId: exp.id, approach, agentId: agent.id },
+            "V2: injecting experiment approach into run",
+          );
+        }
+      } catch (expErr) {
+        logger.warn({ err: expErr, agentId: agent.id }, "V2: failed to inject experiment context");
+      }
+
+      // V2: Resolve MCP servers for this agent and inject config path into context
+      let mcpConfigCleanup: (() => void) | null = null;
+      try {
+        const { mcpResolverService } = await import("./agent-runtime/mcp-resolver.js");
+        const mcpResolver = mcpResolverService(db);
+        const mcpServers = await mcpResolver.resolveMcpConfig(agent.id, agent.companyId);
+        if (mcpServers.length > 0) {
+          const os = await import("node:os");
+          const fs = await import("node:fs");
+          const path = await import("node:path");
+          const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-mcp-"));
+          const configPath = await mcpResolver.writeMcpConfigFile(mcpServers, tempDir);
+          context.paperclipMcpConfigPath = configPath;
+          logger.info(
+            { agentId: agent.id, runId: run.id, mcpServerCount: mcpServers.length, configPath },
+            "V2: injecting MCP config into agent run",
+          );
+          mcpConfigCleanup = () => {
+            try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* ignore */ }
+          };
+        } else {
+          logger.info({ agentId: agent.id, runId: run.id }, "V2: no MCP servers resolved for agent");
+        }
+      } catch (mcpErr) {
+        logger.warn({ err: mcpErr, agentId: agent.id, runId: run.id }, "Failed to resolve MCP config for agent run");
+      }
+
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
-        config: resolvedConfig,
+        config: runtimeConfig,
         context,
         onLog,
         onMeta: onAdapterMeta,
+        onSpawn: async (meta) => {
+          await persistRunProcessMetadata(run.id, meta);
+        },
         authToken: authToken ?? undefined,
       });
+
+      // Clean up temp files
+      if (mcpConfigCleanup) mcpConfigCleanup();
+      if (memoryCleanup) memoryCleanup();
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
             db,
@@ -2269,6 +2811,7 @@ export function heartbeatService(db: Db) {
             ? null
             : redactCurrentUserText(
                 adapterResult.errorMessage ?? (outcome === "timed_out" ? "Timed out" : "Adapter failed"),
+                currentUserRedactionOptions,
               ),
         errorCode:
           outcome === "timed_out"
@@ -2333,10 +2876,203 @@ export function heartbeatService(db: Db) {
             });
           }
         }
+        // V2: Also persist to project session
+        if (executionProjectId && nextSessionState.params) {
+          try {
+            const { sessionResolverService } = await import("./agent-runtime/session-resolver.js");
+            const sessionResolver = sessionResolverService(db);
+            await sessionResolver.updateSession(agent.id, agent.adapterType, executionProjectId, {
+              sessionParamsJson: nextSessionState.params,
+              sessionDisplayId: nextSessionState.displayId,
+              lastRunId: finalizedRun.id,
+              runCount: 1,
+              inputTokens: normalizedUsage?.inputTokens ?? 0,
+              outputTokens: normalizedUsage?.outputTokens ?? 0,
+            });
+          } catch (err) {
+            logger.warn({ err, agentId: agent.id, runId: run.id }, "V2: failed to persist project session");
+          }
+        }
+        // V2: Post-run KPI recording
+        try {
+          const { postRunEvalService } = await import("./agent-runtime/post-run-eval.js");
+          const postRunEval = postRunEvalService(db);
+          const startedAt = run.startedAt ?? new Date();
+          const finishedAt = new Date();
+          await postRunEval.recordKpis({
+            agentId: agent.id,
+            companyId: agent.companyId,
+            projectId: executionProjectId ?? null,
+            runId: run.id,
+            taskCompleted: outcome === "succeeded",
+            tokensUsed: (normalizedUsage?.inputTokens ?? 0) + (normalizedUsage?.outputTokens ?? 0),
+            costCents: adapterResult.costUsd != null ? Math.round(adapterResult.costUsd * 100) : null,
+            durationSeconds: Math.round((finishedAt.getTime() - startedAt.getTime()) / 1000),
+            errorsEncountered: outcome === "failed" ? 1 : 0,
+          });
+          logger.info({ agentId: agent.id, runId: run.id, outcome }, "V2: recorded post-run KPIs");
+        } catch (err) {
+          logger.warn({ err, agentId: agent.id, runId: run.id }, "V2: failed to record post-run KPIs");
+        }
+
+        // V2 Layer 2: Trigger CEO + board review every N runs
+        try {
+          const CEO_REVIEW_INTERVAL = 10; // Every 10 runs across any agent in the company
+          const { agentKpis: kpiTable, agents: agentsTable } = await import("@paperclipai/db");
+          const { count } = await import("drizzle-orm");
+
+          // Count total company KPIs
+          const [{ value: totalKpis }] = await db
+            .select({ value: count() })
+            .from(kpiTable)
+            .where(eq(kpiTable.companyId, agent.companyId));
+
+          if (totalKpis > 0 && totalKpis % CEO_REVIEW_INTERVAL === 0) {
+            // Find CEO agent (role === "ceo" or reportsTo === null and not the current agent)
+            const ceoAgents = await db
+              .select()
+              .from(agentsTable)
+              .where(
+                and(
+                  eq(agentsTable.companyId, agent.companyId),
+                  eq(agentsTable.role, "ceo"),
+                ),
+              )
+              .limit(1);
+
+            const ceoAgent = ceoAgents[0];
+            if (ceoAgent && ceoAgent.id !== agent.id && ceoAgent.status !== "paused") {
+              // Build a trend report for the CEO
+              const { kpiAnalyticsService } = await import("./agent-runtime/kpi-analytics.js");
+              const analytics = kpiAnalyticsService(db);
+              const companyAnalytics = await analytics.getCompanyAnalytics(agent.companyId);
+
+              const agentSummaries = companyAnalytics.agents
+                .filter((a) => a.totalRuns > 0)
+                .map((a) =>
+                  `- **${a.agentName}**: ${a.totalRuns} runs, ${a.completionRate != null ? Math.round(a.completionRate * 100) : "?"}% completion, avg $${((a.avgCostCents ?? 0) / 100).toFixed(3)}/run`
+                )
+                .join("\n");
+
+              const reviewPrompt = `# Company Performance Review — ${new Date().toDateString()}
+
+This is your scheduled performance review. The company has completed ${totalKpis} agent runs total.
+
+## Agent Performance Summary
+${agentSummaries || "No data yet."}
+
+## Your Task
+Review this data and decide if any action is needed:
+1. Are any agents underperforming (low completion rate, high cost, high errors)?
+2. Are there patterns that suggest a skill or memory update would help?
+3. Should any agent's MCP access or skills be changed?
+4. Write an observation to the board via POST /api/companies/${agent.companyId}/analytics/observations if you notice anything significant.
+
+Focus on **trends over time**, not single runs. Only act when you see a sustained pattern.`;
+
+              await enqueueWakeup(ceoAgent.id, {
+                source: "on_demand",
+                reason: "ceo_performance_review",
+                contextSnapshot: {
+                  wakeReason: "ceo_performance_review",
+                  reviewPrompt,
+                  totalCompanyRuns: totalKpis,
+                  triggeredByAgent: agent.name,
+                  triggeredByRun: run.id,
+                },
+              });
+
+              logger.info(
+                { ceoAgentId: ceoAgent.id, totalKpis, companyId: agent.companyId },
+                "V2: triggered CEO performance review wakeup",
+              );
+            }
+          }
+        } catch (reviewErr) {
+          logger.warn({ err: reviewErr, agentId: agent.id }, "V2: failed to trigger CEO review");
+        }
+
+        // V2 Layer 3: Update active experiments with this run's results
+        try {
+          const { agentExperiments: expTable } = await import("@paperclipai/db");
+
+          const activeExperiments = await db
+            .select()
+            .from(expTable)
+            .where(
+              and(
+                eq(expTable.agentId, agent.id),
+                eq(expTable.status, "running"),
+              ),
+            );
+
+          for (const experiment of activeExperiments) {
+            // Determine which approach was used (stored in context)
+            const approachUsed = typeof context.v2ExperimentApproach === "string"
+              ? context.v2ExperimentApproach
+              : null;
+            if (!approachUsed || (approachUsed !== "a" && approachUsed !== "b")) continue;
+
+            const kpiResult = {
+              taskCompleted: outcome === "succeeded",
+              tokensUsed: (normalizedUsage?.inputTokens ?? 0) + (normalizedUsage?.outputTokens ?? 0),
+              costCents: adapterResult.costUsd != null ? Math.round(adapterResult.costUsd * 100) : 0,
+              durationSeconds: run.startedAt ? Math.round((Date.now() - run.startedAt.getTime()) / 1000) : 0,
+            };
+
+            const isA = approachUsed === "a";
+            const newRunsA = isA ? experiment.runsA + 1 : experiment.runsA;
+            const newRunsB = isA ? experiment.runsB : experiment.runsB + 1;
+            const currentResults = isA
+              ? (experiment.kpiResultsA as Record<string, unknown>)
+              : (experiment.kpiResultsB as Record<string, unknown>);
+
+            // Rolling average update
+            const prevCount = isA ? experiment.runsA : experiment.runsB;
+            const updatedResults: Record<string, unknown> = {
+              completionRate: ((Number(currentResults.completionRate ?? 0) * prevCount) + (kpiResult.taskCompleted ? 1 : 0)) / (prevCount + 1),
+              avgTokens: ((Number(currentResults.avgTokens ?? 0) * prevCount) + kpiResult.tokensUsed) / (prevCount + 1),
+              avgCostCents: ((Number(currentResults.avgCostCents ?? 0) * prevCount) + kpiResult.costCents) / (prevCount + 1),
+              avgDurationSeconds: ((Number(currentResults.avgDurationSeconds ?? 0) * prevCount) + kpiResult.durationSeconds) / (prevCount + 1),
+              runs: prevCount + 1,
+            };
+
+            // Auto-conclude if enough runs (min 5 per approach)
+            const shouldConclude = newRunsA >= 5 && newRunsB >= 5;
+            const aCompletion = isA ? Number(updatedResults.completionRate) : Number((experiment.kpiResultsA as Record<string,unknown>).completionRate ?? 0);
+            const bCompletion = isA ? Number((experiment.kpiResultsB as Record<string,unknown>).completionRate ?? 0) : Number(updatedResults.completionRate);
+            const winner = shouldConclude ? (aCompletion >= bCompletion ? "a" : "b") : null;
+
+            const { kpiAnalyticsService } = await import("./agent-runtime/kpi-analytics.js");
+            const analytics = kpiAnalyticsService(db);
+            await analytics.updateExperiment(experiment.id, {
+              runsA: newRunsA,
+              runsB: newRunsB,
+              kpiResultsA: isA ? updatedResults : (experiment.kpiResultsA as Record<string, unknown>),
+              kpiResultsB: isA ? (experiment.kpiResultsB as Record<string, unknown>) : updatedResults,
+              ...(shouldConclude && winner ? {
+                status: "concluded",
+                winningApproach: winner,
+                concludedAt: new Date(),
+                changeNotes: `Auto-concluded after ${newRunsA + newRunsB} runs. Winner: Approach ${winner.toUpperCase()} (${(aCompletion * 100).toFixed(1)}% vs ${(bCompletion * 100).toFixed(1)}% completion rate).`,
+              } : {}),
+            });
+
+            logger.info(
+              { experimentId: experiment.id, approachUsed, shouldConclude, winner },
+              "V2: updated experiment results",
+            );
+          }
+        } catch (expErr) {
+          logger.warn({ err: expErr, agentId: agent.id }, "V2: failed to update experiments");
+        }
       }
       await finalizeAgentStatus(agent.id, outcome);
     } catch (err) {
-      const message = redactCurrentUserText(err instanceof Error ? err.message : "Unknown adapter failure");
+      const message = redactCurrentUserText(
+        err instanceof Error ? err.message : "Unknown adapter failure",
+        await getCurrentUserRedactionOptions(),
+      );
       logger.error({ err, runId }, "heartbeat execution failed");
 
       let logSummary: { bytes: number; sha256?: string; compressed: boolean } | null = null;
@@ -2524,7 +3260,9 @@ export function heartbeatService(db: Db) {
           payload: promotedPayload,
         });
 
-        const sessionBefore = await resolveSessionBeforeForWakeup(deferredAgent, promotedTaskKey);
+        const sessionBefore =
+          readNonEmptyString(promotedContextSnapshot.resumeSessionDisplayId) ??
+          await resolveSessionBeforeForWakeup(deferredAgent, promotedTaskKey);
         const now = new Date();
         const newRun = await tx
           .insert(heartbeatRuns)
@@ -2603,10 +3341,30 @@ export function heartbeatService(db: Db) {
       triggerDetail,
       payload,
     });
-    const issueId = readNonEmptyString(enrichedContextSnapshot.issueId) ?? issueIdFromPayload;
+    let issueId = readNonEmptyString(enrichedContextSnapshot.issueId) ?? issueIdFromPayload;
 
     const agent = await getAgent(agentId);
     if (!agent) throw notFound("Agent not found");
+    const explicitResumeSession = await resolveExplicitResumeSessionOverride(agent, payload, taskKey);
+    if (explicitResumeSession) {
+      enrichedContextSnapshot.resumeFromRunId = explicitResumeSession.resumeFromRunId;
+      enrichedContextSnapshot.resumeSessionDisplayId = explicitResumeSession.sessionDisplayId;
+      enrichedContextSnapshot.resumeSessionParams = explicitResumeSession.sessionParams;
+      if (!readNonEmptyString(enrichedContextSnapshot.issueId) && explicitResumeSession.issueId) {
+        enrichedContextSnapshot.issueId = explicitResumeSession.issueId;
+      }
+      if (!readNonEmptyString(enrichedContextSnapshot.taskId) && explicitResumeSession.taskId) {
+        enrichedContextSnapshot.taskId = explicitResumeSession.taskId;
+      }
+      if (!readNonEmptyString(enrichedContextSnapshot.taskKey) && explicitResumeSession.taskKey) {
+        enrichedContextSnapshot.taskKey = explicitResumeSession.taskKey;
+      }
+      issueId = readNonEmptyString(enrichedContextSnapshot.issueId) ?? issueId;
+    }
+    const effectiveTaskKey = readNonEmptyString(enrichedContextSnapshot.taskKey) ?? taskKey;
+    const sessionBefore =
+      explicitResumeSession?.sessionDisplayId ??
+      await resolveSessionBeforeForWakeup(agent, effectiveTaskKey);
 
     const writeSkippedRequest = async (skipReason: string) => {
       await db.insert(agentWakeupRequests).values({
@@ -2670,7 +3428,6 @@ export function heartbeatService(db: Db) {
 
     if (issueId && !bypassIssueExecutionLock) {
       const agentNameKey = normalizeAgentNameKey(agent.name);
-      const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
 
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(
@@ -3020,8 +3777,6 @@ export function heartbeatService(db: Db) {
       })
       .returning()
       .then((rows) => rows[0]);
-
-    const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
 
     const newRun = await db
       .insert(heartbeatRuns)
@@ -3374,7 +4129,7 @@ export function heartbeatService(db: Db) {
         store: run.logStore,
         logRef: run.logRef,
         ...result,
-        content: redactCurrentUserText(result.content),
+        content: redactCurrentUserText(result.content, await getCurrentUserRedactionOptions()),
       };
     },
 
@@ -3395,11 +4150,29 @@ export function heartbeatService(db: Db) {
 
     wakeup: enqueueWakeup,
 
+    reportRunActivity: clearDetachedRunWarning,
+
     reapOrphanedRuns,
 
     resumeQueuedRuns,
 
     tickTimers: async (now = new Date()) => {
+      // Pause ALL heartbeat wakeups when there are no active cron jobs (routines).
+      // Agents are only woken on a schedule while at least one routine is registered;
+      // with none, the scheduler idles (no runs, no DB churn) until one is added.
+      // Fail open: if this check errors, fall through to the normal tick.
+      try {
+        const activeRoutine = await db
+          .select({ id: routines.id })
+          .from(routines)
+          .where(eq(routines.status, "active"))
+          .limit(1);
+        if (activeRoutine.length === 0) {
+          return { checked: 0, enqueued: 0, skipped: 0 };
+        }
+      } catch {
+        /* fall through to the normal tick */
+      }
       const allAgents = await db.select().from(agents);
       let checked = 0;
       let enqueued = 0;

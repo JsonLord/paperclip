@@ -460,6 +460,23 @@ export function projectService(db: Db) {
 
       const [withGoals] = await attachGoals(db, [row]);
       const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+
+      // Lazily initialize the company's Firm workspace and link this project so
+      // its business-as-code reference stays in sync. Fire-and-forget: this must
+      // never block or fail project creation.
+      if (enriched) {
+        void import("./firm-sync.js")
+          .then(({ firmSyncService }) =>
+            firmSyncService(db).onProjectCreated({
+              companyId,
+              projectId: enriched.id,
+              projectName: enriched.name,
+              repoUrl: enriched.codebase?.repoUrl ?? null,
+            }),
+          )
+          .catch(() => { /* logged inside firmSyncService */ });
+      }
+
       return enriched!;
     },
 

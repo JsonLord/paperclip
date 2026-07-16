@@ -51,9 +51,8 @@ Public packages are discovered from:
 
 - `packages/`
 - `server/`
+- `ui/`
 - `cli/`
-
-`ui/` is ignored because it is private.
 
 The version rewrite step now uses [`scripts/release-package-map.mjs`](../scripts/release-package-map.mjs), which:
 
@@ -65,17 +64,29 @@ The version rewrite step now uses [`scripts/release-package-map.mjs`](../scripts
 
 Those rewrites are temporary. The working tree is restored after publish or dry-run.
 
+## `@paperclipai/ui` packaging
+
+The UI package publishes prebuilt static assets, not the source workspace.
+
+The `ui` package uses [`scripts/generate-ui-package-json.mjs`](../scripts/generate-ui-package-json.mjs) during `prepack` to swap in a lean publish manifest that:
+
+- keeps the release-managed `name` and `version`
+- publishes only `dist/`
+- omits the source-only dependency graph from downstream installs
+
+After packing or publishing, `postpack` restores the development manifest automatically.
+
 ## Version formats
 
 Paperclip uses calendar versions:
 
-- stable: `YYYY.M.D`
-- canary: `YYYY.M.D-canary.N`
+- stable: `YYYY.MDD.P`
+- canary: `YYYY.MDD.P-canary.N`
 
 Examples:
 
-- stable: `2026.3.17`
-- canary: `2026.3.17-canary.2`
+- stable: `2026.318.0`
+- canary: `2026.318.1-canary.2`
 
 ## Publish model
 
@@ -85,7 +96,7 @@ Canaries publish under the npm dist-tag `canary`.
 
 Example:
 
-- `paperclipai@2026.3.17-canary.2`
+- `paperclipai@2026.318.1-canary.2`
 
 This keeps the default install path unchanged while allowing explicit installs with:
 
@@ -99,13 +110,13 @@ Stable publishes use the npm dist-tag `latest`.
 
 Example:
 
-- `paperclipai@2026.3.17`
+- `paperclipai@2026.318.0`
 
 Stable publishes do not create a release commit. Instead:
 
 - package versions are rewritten temporarily
 - packages are published from the chosen source commit
-- git tag `vYYYY.M.D` points at that original commit
+- git tag `vYYYY.MDD.P` points at that original commit
 
 ## Trusted publishing
 
@@ -126,7 +137,7 @@ Rollback does not unpublish anything.
 It repoints the `latest` dist-tag to a prior stable version:
 
 ```bash
-./scripts/rollback-latest.sh 2026.3.16
+./scripts/rollback-latest.sh 2026.318.0
 ```
 
 This is the fastest way to restore the default install path if a stable release is bad.
@@ -135,6 +146,7 @@ This is the fastest way to restore the default install path if a stable release 
 
 - [`scripts/build-npm.sh`](../scripts/build-npm.sh)
 - [`scripts/generate-npm-package-json.mjs`](../scripts/generate-npm-package-json.mjs)
+- [`scripts/generate-ui-package-json.mjs`](../scripts/generate-ui-package-json.mjs)
 - [`scripts/release-package-map.mjs`](../scripts/release-package-map.mjs)
 - [`cli/esbuild.config.mjs`](../cli/esbuild.config.mjs)
 - [`doc/RELEASING.md`](RELEASING.md)

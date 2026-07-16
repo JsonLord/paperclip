@@ -1,0 +1,6 @@
+model:
+  provider: custom
+  base_url: https://api.helmholtz-blablador.fz-juelich.de/v1
+  default: alias-large
+  model: alias-large
+  api_key: ${BLABLADOR_TOKEN}

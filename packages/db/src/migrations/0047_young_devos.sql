@@ -1,0 +1,2 @@
+ALTER TABLE "agents" ALTER COLUMN "adapter_type" SET DEFAULT 'http';--> statement-breakpoint
+ALTER TABLE "agents" ALTER COLUMN "adapter_config" SET DEFAULT '{"url":"https://leon4gr45-openoperator.hf.space/chat","method":"POST","headers":{"Content-Type":"application/json","Authorization":"Bearer admin"},"timeout_ms":300000,"payload_template":{"message":"{{task_description}}","subagent":"{{agent_name}}"}}'::jsonb;

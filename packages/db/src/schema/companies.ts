@@ -17,6 +17,9 @@ export const companies = pgTable(
       .notNull()
       .default(true),
     brandColor: text("brand_color"),
+    githubRepoUrl: text("github_repo_url"),
+    julesAgentSlot: text("jules_agent_slot"),
+    homarrBoardSlug: text("homarr_board_slug"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
