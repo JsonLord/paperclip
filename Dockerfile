@@ -56,7 +56,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
        python3 python3-pip pipx build-essential gettext-base postgresql postgresql-contrib postgresql-client tzdata \
   && rm -rf /var/lib/apt/lists/* \
-  && pipx install --global hermes-agent \
+  && (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash || pipx install --global hermes-agent) \
   && pipx install --global openviking==0.4.6
 
 # Baked-in HOME for the hermes_local subprocess (see docker/hermes-home)
@@ -77,7 +77,10 @@ ENV NODE_ENV=production \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=public \
   PAPERCLIP_MIGRATION_AUTO_APPLY=true \
-  OPENVIKING_CONFIG_FILE=/paperclip/.openviking/ov.conf
+  OPENVIKING_CONFIG_FILE=/paperclip/.openviking/ov.conf \
+  HERMES_DASHBOARD_HOST=127.0.0.1 \
+  HERMES_DASHBOARD_PORT=7861 \
+  HERMES_DASHBOARD_URL=http://127.0.0.1:7861
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
