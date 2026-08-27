@@ -73,6 +73,11 @@ export interface StartedServer {
 
 export async function startServer(): Promise<StartedServer> {
   let config = loadConfig();
+  if (config.deploymentMode !== "local_trusted" && process.env.FOUNDER_OS_REQUIRED === "true" && !config.founderOsAccessToken) {
+    throw new Error(
+      "FOUNDER_OS_ACCESS_TOKEN is not set. A deployed Founder OS holds live payment and inbox credentials, so it refuses to serve without one. Generate a token (`openssl rand -hex 32`) and set it in your host's environment.",
+    );
+  }
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
   }
