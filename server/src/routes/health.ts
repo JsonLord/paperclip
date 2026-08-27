@@ -84,6 +84,7 @@ export function healthRoutes(
       bootstrapInviteActive,
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
+        founderOsConfigured: Boolean(process.env.FOUNDER_OS_ACCESS_TOKEN?.trim()),
       },
       ...(devServer ? { devServer } : {}),
     });
