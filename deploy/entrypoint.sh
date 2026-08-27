@@ -9,6 +9,7 @@ log() { echo "[entrypoint $(date -uIseconds)] $*"; }
 
 export HOME="${HOME:-/paperclip}"
 : "${PORT:=7860}"; export PORT
+export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-paperclip-default-secret-change-in-space-secrets}"
 OV_DIR="$HOME/.openviking"
 export OPENVIKING_CONFIG_FILE="${OPENVIKING_CONFIG_FILE:-$OV_DIR/ov.conf}"
 mkdir -p "$OV_DIR/data" "$HOME/instances"

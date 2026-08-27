@@ -1,0 +1,12 @@
+.git
+.github
+.paperclip
+.pnpm-store
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+data
+tmp
+*.log
