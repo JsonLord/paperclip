@@ -14,6 +14,7 @@ import {
   budgetService,
   companyPortabilityService,
   companyService,
+  firmService,
   logActivity,
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -24,6 +25,7 @@ export function companyRoutes(db: Db) {
   const portability = companyPortabilityService(db);
   const access = accessService(db);
   const budgets = budgetService(db);
+  const firm = firmService(db);
 
   router.get("/", async (req, res) => {
     assertBoard(req);
@@ -141,6 +143,8 @@ export function companyRoutes(db: Db) {
         req.actor.userId ?? "board",
       );
     }
+    // Fire-and-forget firm initialization — sets up firm context for this company's agents
+    void firm.initFirm(company.id, company.firmGithubRepo ?? null);
     res.status(201).json(company);
   });
 

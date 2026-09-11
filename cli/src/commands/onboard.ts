@@ -396,6 +396,19 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     }
   }
 
+  // Prompt for firm GitHub repo (42futures/firm integration)
+  let firmGithubRepo: string | null = process.env.PAPERCLIP_FIRM_GITHUB_REPO?.trim() || null;
+  if (!firmGithubRepo && !opts.yes) {
+    const firmRepoAnswer = await p.text({
+      message: "Firm GitHub repo for agent context (leave blank to use default 42futures/firm)",
+      placeholder: "42futures/firm",
+      defaultValue: "",
+    });
+    if (!p.isCancel(firmRepoAnswer) && typeof firmRepoAnswer === "string" && firmRepoAnswer.trim().length > 0) {
+      firmGithubRepo = firmRepoAnswer.trim();
+    }
+  }
+
   const jwtSecret = ensureAgentJwtSecret(configPath);
   const envFilePath = resolveAgentJwtEnvFile(configPath);
   if (jwtSecret.created) {
@@ -441,9 +454,20 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
       "Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured",
+      `Firm context: ${firmGithubRepo ?? "42futures/firm (default)"}`,
     ].join("\n"),
     "Configuration saved",
   );
+
+  if (firmGithubRepo) {
+    p.log.info(
+      `Firm context repo ${pc.cyan(firmGithubRepo)} will be fetched when you create your first company.`,
+    );
+  } else {
+    p.log.info(
+      `Firm context from ${pc.cyan("42futures/firm")} will be fetched automatically when you create a company.`,
+    );
+  }
 
   p.note(
     [

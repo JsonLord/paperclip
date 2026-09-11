@@ -13,6 +13,8 @@ export interface Company {
   spentMonthlyCents: number;
   requireBoardApprovalForNewAgents: boolean;
   brandColor: string | null;
+  firmGithubRepo: string | null;
+  firmLastRefreshedAt: Date | null;
   logoAssetId: string | null;
   logoUrl: string | null;
   createdAt: Date;
