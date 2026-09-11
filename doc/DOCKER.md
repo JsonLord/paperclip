@@ -68,6 +68,24 @@ Granular overrides remain available if needed (`PAPERCLIP_AUTH_PUBLIC_BASE_URL`,
 
 Set `PAPERCLIP_ALLOWED_HOSTNAMES` explicitly only when you need additional hostnames beyond the public URL host (for example Tailscale/LAN aliases or multiple private hostnames).
 
+
+## Hermes dashboard sidecar on Hugging Face
+
+The production Docker image installs the Hermes CLI during the image build, starts `hermes dashboard` as a loopback-only sidecar on container boot, and exposes it through the Paperclip server proxy. In the Hugging Face Space deployment this makes the Hermes dashboard reachable at:
+
+- `https://leon4gr45-paperclip.hf.space/dashboard`
+- `https://leon4gr45-paperclip.hf.space/hammers` (alias)
+
+Runtime knobs:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HERMES_DASHBOARD_HOST` | `127.0.0.1` | Loopback bind host for the sidecar. |
+| `HERMES_DASHBOARD_PORT` | `7861` | Loopback sidecar port. |
+| `HERMES_DASHBOARD_URL` | `http://127.0.0.1:7861` | Upstream URL used by the Paperclip reverse proxy. |
+
+The dashboard remains private to the container network; public traffic enters through Paperclip on port `7860` and is proxied under `/dashboard` and `/hammers`.
+
 ## Claude + Codex Local Adapters in Docker
 
 The image pre-installs:

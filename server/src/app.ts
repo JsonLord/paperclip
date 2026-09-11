@@ -1,4 +1,4 @@
-import express, { Router, type Request as ExpressRequest } from "express";
+import express, { Router, type Request as ExpressRequest, type Response as ExpressResponse } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,71 @@ import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
+
+function createHermesDashboardProxy() {
+  const upstream = process.env.HERMES_DASHBOARD_URL?.trim();
+  if (!upstream) return null;
+
+  let upstreamUrl: URL;
+  try {
+    upstreamUrl = new URL(upstream);
+  } catch {
+    logger.warn({ upstream }, "invalid HERMES_DASHBOARD_URL; Hermes dashboard proxy disabled");
+    return null;
+  }
+
+  const proxy = async (req: ExpressRequest, res: ExpressResponse) => {
+    const requestPath = req.originalUrl.startsWith("/dashboard")
+      ? req.originalUrl.slice("/dashboard".length) || "/"
+      : req.originalUrl.startsWith("/hammers")
+        ? req.originalUrl.slice("/hammers".length) || "/"
+        : req.originalUrl;
+    const target = new URL(requestPath, upstreamUrl);
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      const lower = name.toLowerCase();
+      if (["host", "connection", "content-length"].includes(lower)) continue;
+      headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+    }
+    headers.set("x-forwarded-host", req.headers.host ?? "");
+    headers.set("x-forwarded-proto", req.protocol);
+    headers.set("x-forwarded-prefix", req.originalUrl.startsWith("/hammers") ? "/hammers" : "/dashboard");
+
+    const init: RequestInit = {
+      method: req.method,
+      headers,
+      redirect: "manual",
+    };
+    const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
+    if (rawBody && !["GET", "HEAD"].includes(req.method.toUpperCase())) {
+      init.body = new Uint8Array(rawBody);
+    }
+
+    let upstreamResponse: globalThis.Response;
+    try {
+      upstreamResponse = await fetch(target, init);
+    } catch (err) {
+      logger.warn({ err, target: target.toString() }, "Hermes dashboard proxy request failed");
+      res.status(502).json({ error: "Hermes dashboard unavailable" });
+      return;
+    }
+
+    res.status(upstreamResponse.status);
+    upstreamResponse.headers.forEach((value, name) => {
+      if (["connection", "content-encoding", "content-length", "transfer-encoding"].includes(name.toLowerCase())) return;
+      res.setHeader(name, value);
+    });
+    if (!upstreamResponse.body) {
+      res.end();
+      return;
+    }
+    const body = Buffer.from(await upstreamResponse.arrayBuffer());
+    res.end(body);
+  };
+
+  return proxy;
+}
 
 export function resolveViteHmrPort(serverPort: number): number {
   if (serverPort <= 55_535) {
@@ -129,6 +194,12 @@ export async function createApp(
   });
   if (opts.betterAuthHandler) {
     app.all("/api/auth/*authPath", opts.betterAuthHandler);
+  }
+
+  const hermesDashboardProxy = createHermesDashboardProxy();
+  if (hermesDashboardProxy) {
+    app.use(["/dashboard", "/dashboard/*dashboardPath", "/hammers", "/hammers/*hammersPath"], hermesDashboardProxy);
+    logger.info({ upstream: process.env.HERMES_DASHBOARD_URL }, "Hermes dashboard proxy enabled at /dashboard and /hammers");
   }
   app.use(llmRoutes(db));
 

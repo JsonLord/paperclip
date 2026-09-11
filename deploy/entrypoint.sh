@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PID-1 supervisor for the paperclip + openviking Space.
-# Order: template ov.conf -> restore file-state -> start openviking -> start paperclip
+# PID-1 supervisor for the paperclip + openviking + Hermes dashboard Space.
+# Order: template ov.conf -> restore file-state -> start openviking -> start Hermes dashboard -> start paperclip
 #        -> (once healthy) rewire agent URLs + bootstrap first admin -> nightly backup.
 # Everything except paperclip is best-effort; a failure there must not crash the app.
 set -uo pipefail
@@ -94,6 +94,22 @@ else
   log "openviking sidecar not started"
 fi
 
+
+# 3b) Hermes dashboard sidecar, proxied by Paperclip at /dashboard and /hammers.
+HERMES_DASHBOARD_PID=""
+: "${HERMES_DASHBOARD_HOST:=127.0.0.1}"
+: "${HERMES_DASHBOARD_PORT:=7861}"
+export HERMES_DASHBOARD_URL="${HERMES_DASHBOARD_URL:-http://${HERMES_DASHBOARD_HOST}:${HERMES_DASHBOARD_PORT}}"
+if command -v hermes >/dev/null 2>&1; then
+  mkdir -p "$HOME/.hermes"
+  # Keep the dashboard bound to loopback; the Node app is the public reverse proxy.
+  hermes dashboard --host "$HERMES_DASHBOARD_HOST" --port "$HERMES_DASHBOARD_PORT" >"$HOME/.hermes/dashboard.log" 2>&1 &
+  HERMES_DASHBOARD_PID=$!
+  log "hermes dashboard started (pid=$HERMES_DASHBOARD_PID) on ${HERMES_DASHBOARD_URL}; proxied at /dashboard and /hammers"
+else
+  log "hermes CLI not found — Hermes dashboard not started"
+fi
+
 # 4) Paperclip control-plane (background so we can supervise + trap shutdown) ---
 node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js &
 APP_PID=$!
@@ -105,6 +121,7 @@ shutdown() {
   bash /app/deploy/backup.sh || log "shutdown backup failed"
   [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
   [ -n "$OV_PID" ]  && kill "$OV_PID"  2>/dev/null
+  [ -n "$HERMES_DASHBOARD_PID" ] && kill "$HERMES_DASHBOARD_PID" 2>/dev/null
   [ -n "$PG_STARTED" ] && pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1
   wait "$APP_PID" 2>/dev/null
   exit 0
@@ -156,7 +173,8 @@ trap shutdown TERM INT
 
 # Keep PID 1 tied to paperclip; if it exits, the container exits.
 wait "$APP_PID"
-log "paperclip exited — stopping openviking + postgres"
+log "paperclip exited — stopping sidecars + postgres"
 [ -n "$OV_PID" ] && kill "$OV_PID" 2>/dev/null
+[ -n "$HERMES_DASHBOARD_PID" ] && kill "$HERMES_DASHBOARD_PID" 2>/dev/null
 [ -n "$PG_STARTED" ] && pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1
 exit 0
