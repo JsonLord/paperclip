@@ -2813,3 +2813,480 @@ The business application layer is complete only when the following works without
 The governing product principle is:
 
 > FounderOS does not exist to generate business documents. It exists to turn evidence into business decisions, business decisions into goal-oriented execution, and execution back into stronger evidence.
+
+---
+
+# 61. P0/P1 — Paperclip-native organizational model and UI are authoritative
+
+FounderOS must use Paperclip's existing first-class organizational primitives as the runtime source of truth for orchestration. Do **not** build a parallel hidden FounderOS goal/task/role hierarchy that bypasses the native Paperclip UI.
+
+The operator should be able to understand the live company from the existing Paperclip surfaces without opening the GitHub repository.
+
+## 61.1 Native entity mapping
+
+Use this mapping:
+
+```text
+Company identity/profile
+→ native Paperclip Company
+
+Company vision / north-star objective
+→ top-level native Paperclip Goal with level=company
+
+Strategic objectives
+→ native Paperclip Goals with level=company or team
+
+Team / functional outcomes
+→ native Paperclip Goals with level=team or agent
+
+Meaningful persistent individual objectives
+→ native Paperclip Goals with level=agent or task
+
+Operational workstreams / campaigns / validation programs
+→ native Paperclip Projects linked to one or more native Goals
+
+Concrete executable outcomes / work items
+→ native Paperclip Issues linked to goalId + projectId and assigned to an Agent/User
+
+FounderOS organizational roles
+→ native Paperclip Agents using role + title + reportsTo + capabilities
+
+Human or policy gates
+→ native Paperclip Approvals
+
+Produced artifact references
+→ native issue Work Products / Documents plus GitHub paths and commit/PR provenance
+
+Execution history / meaningful progress
+→ native Paperclip Activity and run state
+
+Budgets / costs
+→ native Paperclip budget/cost mechanisms where applicable
+```
+
+Firm/GitHub remain canonical for **business knowledge, evidence, company artifacts and business-as-code**. Paperclip native entities remain canonical for **organizational execution state**.
+
+Do not duplicate live status in both places and then attempt informal reconciliation.
+
+## 61.2 Vision must stay visible in native Goals UI
+
+The inspected Paperclip model currently exposes Goal levels:
+
+```text
+company
+team
+agent
+task
+```
+
+There is no separate dedicated `Vision` entity in the current codebase. Therefore FounderOS should model the active company vision as a top-level native Paperclip Goal using `level=company`, for example:
+
+```text
+Vision — Become the default pre-launch validation platform for X
+```
+
+Its description contains the durable north-star statement and boundaries. Strategic goals sit beneath it using `parentId`.
+
+Do **not** create a parallel `founderos_visions` table solely for FounderOS.
+
+If upstream Paperclip later introduces a first-class native Vision primitive, migrate the mapping to that native primitive rather than retaining a competing FounderOS version.
+
+The company `description` may summarize the venture but should not replace the visible goal hierarchy.
+
+## 61.3 FounderOS Goal Library is a template library, not a second goal database
+
+The YAML definitions under:
+
+```text
+company-package/goals/**
+```
+
+are reusable **goal templates/definitions** only.
+
+When Hermes selects a FounderOS goal definition, Paperclip must instantiate or update a normal native Paperclip Goal record. The resulting goal must immediately appear in the existing Goals UI and participate in the existing parent/child hierarchy, ownership, status and project linking.
+
+The native Goal remains authoritative for runtime state:
+
+```text
+id
+companyId
+title
+description
+level
+status
+parentId
+ownerAgentId
+requiredSkills
+supportPacks
+requiredCapabilities
+inputPaths
+outputPaths
+acceptanceCriteria
+cannotCompleteIf
+```
+
+If additional FounderOS provenance is required, extend the **native Goal model** with optional fields such as:
+
+```text
+systemId
+templateId
+templateVersion
+sourceRepo
+sourceCommit
+```
+
+or a native goal metadata field. Do not create a separate `founderos_goals` runtime table.
+
+Template changes do not silently mutate active goals. Active goals keep their instantiated contract/version until explicitly upgraded.
+
+## 61.4 Native goal hierarchy for FounderOS
+
+Recommended hierarchy:
+
+```text
+COMPANY GOAL
+Vision / North Star
+│
+├── COMPANY or TEAM GOAL
+│   Validate market opportunity
+│   │
+│   ├── TEAM/AGENT GOAL
+│   │   Validate ICP and problem
+│   │
+│   └── TEAM/AGENT GOAL
+│       Validate willingness to pay
+│
+├── COMPANY or TEAM GOAL
+│   Establish repeatable GTM
+│   │
+│   ├── TEAM/AGENT GOAL
+│   │   Validate channel X
+│   │
+│   └── TEAM/AGENT GOAL
+│       Build content-demand loop
+│
+└── COMPANY or TEAM GOAL
+    Produce investor/business case
+    │
+    ├── AGENT GOAL
+    │   Compile BMC
+    ├── AGENT GOAL
+    │   Compile business plan
+    └── AGENT GOAL
+        Compile pitch
+```
+
+Do not turn every Linear subtask into a native Goal. Fine-grained planning stays in Linear; concrete executable work is normally a native Paperclip Issue. Goals represent outcomes, not checklists.
+
+## 61.5 Native Projects are the visible operating-system/workstream layer
+
+FounderOS systems such as:
+
+```text
+Customer Discovery
+Prospecting
+Sales Validation
+Fake-Door Validation
+Content & Distribution
+Kickstarter Launch
+Business Case
+Investor Pitch
+```
+
+should create or reuse native Paperclip Projects when they become active workstreams.
+
+Each Project should use native fields and UI relationships:
+
+```text
+companyId
+goalIds / goals
+name
+description
+status
+leadAgentId
+targetDate
+workspace/repository binding
+```
+
+The system catalog in FounderOS content describes **how a business loop works**. It is not a competing runtime project tracker.
+
+Example:
+
+```text
+FounderOS system definition: Content & Distribution OS
+        ↓ activated for Company A
+Native Paperclip Project: Q4 Problem-Awareness Campaign
+        ↓ linked to
+Native Goal: Validate channel/message fit with ICP A
+        ↓ contains
+Native Issues: produce package, review creatives, deploy landing variant, analyze results
+```
+
+## 61.6 Native Issues are execution outcomes visible in Paperclip
+
+Substantial Jules work should be represented by a native Paperclip Issue before dispatch.
+
+The Issue should retain the native links:
+
+```text
+companyId
+projectId
+goalId
+parentId when needed
+status
+priority
+assigneeAgentId / assigneeUserId
+executionRunId
+work products
+plan/document state
+```
+
+Jules session state is attached to this execution context; it does not replace the Issue.
+
+Recommended lifecycle:
+
+```text
+Paperclip Goal
+→ Paperclip Project
+→ Paperclip Issue assigned to native Agent
+→ Hermes prepares assignment
+→ Jules executes
+→ completion candidate
+→ deterministic validation
+→ Hermes judgment
+→ native Issue status update
+→ native Goal/Project progress update when warranted
+```
+
+Linear may contain many detailed subtasks beneath this Issue without polluting the Paperclip UI.
+
+## 61.7 Native Agent roles and org chart must be used
+
+FounderOS specialized roles must be represented as native Paperclip Agents so they remain visible in Agents/Agent Detail and the organizational reporting structure.
+
+Use the native fields:
+
+```text
+name
+role
+title
+reportsTo
+capabilities
+adapterType
+status
+budget
+metadata
+```
+
+The current native role enum includes:
+
+```text
+ceo
+cto
+cmo
+cfo
+engineer
+designer
+pm
+qa
+devops
+researcher
+general
+```
+
+Specialized FounderOS names should normally use the nearest native role plus a precise `title`, rather than creating a hidden role system.
+
+Examples:
+
+```text
+name: Market Analyst
+role: researcher
+title: Market Analysis & Evidence
+reportsTo: Founder Manager / CEO
+
+name: Pitch Agent
+role: general
+title: Investor Pitch & Business Case
+reportsTo: Founder Manager / CEO
+
+name: Content Strategist
+role: cmo
+title: Content & Distribution Strategy
+reportsTo: Founder Manager / CEO
+
+name: Financial Case
+role: cfo
+title: Financial Planning & Unit Economics
+reportsTo: Founder Manager / CEO
+```
+
+If the native role enum is later made extensible upstream, FounderOS may expose richer role labels through that native mechanism. Until then, preserve compatibility with Paperclip's native `role` while using `title`, `capabilities`, skills and metadata for specialization.
+
+Hermes is a manager/executive capability, but when represented organizationally it should also have a normal native Paperclip Agent identity so its ownership and reporting relationships are visible in the UI.
+
+## 61.8 Native approvals, activity and work products
+
+Do not build separate FounderOS approval/activity dashboards when native Paperclip primitives can represent them.
+
+Use native Approvals for:
+
+```text
+plan approval when required
+publishing approval
+outreach/send approval
+spend approval
+account-creation approval
+payment/deposit configuration
+high-impact deployment
+human strategic escalation
+```
+
+Where a new approval type is necessary, extend the native approval type model/UI rather than creating a parallel approval subsystem.
+
+Use native activity/run surfaces for meaningful progress and execution events.
+
+Register important generated artifacts as native work products/documents that reference the GitHub path/commit/PR. The actual artifact remains durable in GitHub; Paperclip provides the navigable operational index.
+
+## 61.9 Native UI is the operational cockpit
+
+The FounderOS adaptation should enhance existing Paperclip pages rather than replacing them with a separate FounderOS dashboard wherever possible.
+
+Required operator experience after import:
+
+```text
+Goals UI
+→ see Vision, strategic goals, child goals, owners, status, linked projects
+
+Agents UI / Org
+→ see Founder Manager and specialized roles, titles, reportsTo, status
+
+Projects UI
+→ see active business systems/workstreams linked to goals and lead agents
+
+Issues UI
+→ see concrete execution outcomes, assignees, state and blockers
+
+Approvals UI
+→ see pending external-action or strategy gates
+
+Activity UI
+→ see meaningful organizational/execution events
+
+Costs/Budgets UI
+→ see runtime financial/resource usage where supported
+```
+
+FounderOS-specific enhancements such as support-pack versions, evidence completeness, Jules session state, validation verdict and artifact staleness should be added as fields/tabs/badges on these native entities or through supported Paperclip UI extension points.
+
+Do not require the operator to use a second hidden FounderOS state UI to understand the company.
+
+## 61.10 Bootstrap must create native visible organization state
+
+After GitHub company import, FounderOS bootstrap should create/update through native Paperclip services/APIs:
+
+```text
+1. native Company binding
+2. top-level company Vision Goal
+3. initial strategic/validation child Goals
+4. native Founder Manager / supervisory Agent identity
+5. required specialized native Agent roles
+6. initial native Project(s)
+7. first executable native Issue/outcome
+8. required Approvals when applicable
+```
+
+All must be visible in the existing UI immediately after creation.
+
+Bootstrap files in GitHub may reference the resulting Paperclip IDs for provenance, but GitHub must not become a competing store for goal/project/issue status.
+
+## 61.11 Hermes and Jules must consume native Paperclip context
+
+Hermes prioritization must read the current native Paperclip hierarchy:
+
+```text
+Company
+→ Vision/company Goal
+→ child Goals
+→ linked Projects
+→ Issues
+→ native Agent ownership/reporting
+→ Approvals / blockers
+```
+
+The Jules Session Contract must receive the actual native IDs:
+
+```text
+companyId
+agentId
+projectId
+goalId
+issue/outcomeId
+```
+
+Jules callbacks must update the same native entities through the scoped Paperclip API.
+
+A goal selected from the FounderOS template library is not considered active until a native Paperclip Goal exists for it.
+
+## 61.12 No shadow-state rule
+
+The following are prohibited as authoritative runtime state:
+
+```text
+separate FounderOS-only goal status in YAML
+separate FounderOS-only role hierarchy disconnected from Agents
+separate campaign/project status only in GitHub Markdown
+separate Jules task status treated as Paperclip outcome status
+Linear being used as canonical company/project state
+Firm being used as canonical execution scheduler
+```
+
+Allowed mirrors must contain Paperclip IDs and be reconstructible from native Paperclip state plus GitHub evidence/artifacts.
+
+Canonical split:
+
+```text
+Paperclip native Company/Goals/Projects/Issues/Agents/Approvals
+= organizational truth visible in UI
+
+GitHub + Firm + evidence
+= business knowledge and artifact truth
+
+Linear
+= detailed execution planning
+
+Jules
+= execution session state
+
+Hermes
+= managerial reasoning
+```
+
+---
+
+# 62. P0/P1 — Native-Paperclip acceptance tests
+
+Codex must add tests proving FounderOS uses native Paperclip primitives end-to-end.
+
+Minimum acceptance scenarios:
+
+```text
+1. Import a company repo.
+2. Bootstrap creates a native company-level Vision Goal.
+3. Vision appears through the normal goals API and Goals UI hierarchy.
+4. Child strategic goal has parentId pointing to the Vision Goal.
+5. Goal ownerAgentId resolves to a native Agent visible in Agent Detail.
+6. Activated FounderOS system creates/reuses a native Project linked through goalIds.
+7. Executable outcome creates a native Issue linked to the Goal and Project.
+8. Jules session is associated with the native Issue/run rather than replacing it.
+9. Jules completion candidate does not mark the native Goal achieved until validation passes.
+10. Accepted work updates native Issue status and goal/project progress according to deterministic policy.
+11. External-action request appears through native Approval mechanisms.
+12. GitHub artifact is registered as a native work product/document reference.
+13. Restart/reconciliation preserves the same native entity IDs.
+14. FounderOS goal templates can be upgraded without replacing active native Goal IDs silently.
+15. No separate FounderOS goal/project/role status store is required to render the company state.
+```
+
+UI acceptance criterion:
+
+> An operator can open Paperclip and understand the company's vision, goals, projects, roles/agents, current execution issues, approvals and major outputs using the native Paperclip UI. FounderOS-specific metadata enriches those entities; it does not bypass them.
