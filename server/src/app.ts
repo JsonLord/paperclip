@@ -12,11 +12,13 @@ import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middlewa
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { firmRoutes } from "./routes/firm.js";
+import { julesRoutes } from "./routes/jules.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
+import { goalSupportRoutes } from "./routes/goal-support.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { costRoutes } from "./routes/costs.js";
@@ -138,12 +140,14 @@ export async function createApp(
   );
   api.use("/companies", companyRoutes(db));
   api.use("/companies", firmRoutes(db));
+  api.use(julesRoutes(db));
   api.use(agentRoutes(db));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(issueRoutes(db, opts.storageService));
   api.use(executionWorkspaceRoutes(db));
   api.use(goalRoutes(db));
+  api.use(goalSupportRoutes(db));
   api.use(approvalRoutes(db));
   api.use(secretRoutes(db));
   api.use(costRoutes(db));

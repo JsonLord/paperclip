@@ -24,7 +24,7 @@ export const help: Record<string, string> = {
   role: "Organizational role. Determines position and capabilities.",
   reportsTo: "The agent this one reports to in the org hierarchy.",
   capabilities: "Describes what this agent can do. Shown in the org chart and used for task routing.",
-  adapterType: "How this agent runs: local CLI (Claude/Codex/OpenCode), OpenClaw Gateway, spawned process, or generic HTTP webhook.",
+  adapterType: "How this agent runs: Hermes for company management or Jules for remote GitHub execution.",
   cwd: "Default working directory fallback for local adapters. Use an absolute path on the machine running Paperclip.",
   promptTemplate: "Sent on every heartbeat. Keep this small and dynamic. Use it for current-task framing, not large static instructions. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} and other template variables.",
   model: "Override the default model used by the adapter.",
@@ -58,6 +58,8 @@ export const help: Record<string, string> = {
 };
 
 export const adapterLabels: Record<string, string> = {
+  hermes_local: "Hermes Founder Manager",
+  jules: "Google Jules (remote)",
   claude_local: "Claude (local)",
   codex_local: "Codex (local)",
   gemini_local: "Gemini CLI (local)",

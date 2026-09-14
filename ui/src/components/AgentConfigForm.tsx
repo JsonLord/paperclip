@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
+import { ACTIVE_AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
 import {
   hasSessionCompactionThresholds,
   resolveSessionCompactionPolicy,
@@ -1033,7 +1033,7 @@ const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "gemini_lo
 
 /** Display list includes all real adapter types plus UI-only coming-soon entries. */
 const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean }[] = [
-  ...AGENT_ADAPTER_TYPES.map((t) => ({
+  ...ACTIVE_AGENT_ADAPTER_TYPES.map((t) => ({
     value: t,
     label: adapterLabels[t] ?? t,
     comingSoon: !ENABLED_ADAPTER_TYPES.has(t),

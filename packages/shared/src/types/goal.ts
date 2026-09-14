@@ -9,6 +9,19 @@ export interface Goal {
   status: GoalStatus;
   parentId: string | null;
   ownerAgentId: string | null;
+  requiredSkills: string[];
+  supportPacks: GoalSupportPackRef[];
+  requiredCapabilities: string[];
+  inputPaths: string[];
+  outputPaths: string[];
+  acceptanceCriteria: string[];
+  cannotCompleteIf: string[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface GoalSupportPackRef {
+  id: string;
+  version?: string;
+  required?: boolean;
 }
