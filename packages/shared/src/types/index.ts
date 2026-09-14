@@ -1,5 +1,7 @@
 export type { Company } from "./company.js";
 export type { FirmSnapshot } from "./firm.js";
+export type { JulesProfile, JulesProfileStatus, CompanyJulesSource, JulesSession, JulesSessionStatus, JulesDispatchDecision } from "./jules.js";
+export type { ResourcePackTier, ResourcePackFile, ResourcePackManifest, ResourcePackSnapshot, ResolvedGoalSupportPack, GoalSupportResolution } from "./resource-pack.js";
 export type { InstanceExperimentalSettings, InstanceSettings } from "./instance.js";
 export type {
   Agent,
@@ -52,7 +54,7 @@ export type {
   IssueAttachment,
   IssueLabel,
 } from "./issue.js";
-export type { Goal } from "./goal.js";
+export type { Goal, GoalSupportPackRef } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,

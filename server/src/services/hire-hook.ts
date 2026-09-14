@@ -39,7 +39,7 @@ export async function notifyHireApproved(
     return;
   }
 
-  const adapterType = row.adapterType ?? "process";
+  const adapterType = row.adapterType ?? "hermes_local";
   const adapter = findServerAdapter(adapterType);
   const onHireApproved = adapter?.onHireApproved;
   if (!onHireApproved) {

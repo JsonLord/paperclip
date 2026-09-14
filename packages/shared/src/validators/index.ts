@@ -1,4 +1,18 @@
 export {
+  resourcePackManifestSchema,
+  installResourcePackSchema,
+  type InstallResourcePack,
+} from "./resource-pack.js";
+
+export {
+  createJulesProfileSchema,
+  bindJulesSourceSchema,
+  julesCallbackSchema,
+  type CreateJulesProfile,
+  type BindJulesSource,
+} from "./jules.js";
+
+export {
   instanceExperimentalSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   type InstanceExperimentalSettings,

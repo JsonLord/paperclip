@@ -2429,7 +2429,7 @@ export function accessRoutes(
           status: "idle",
           reportsTo: managerId,
           capabilities: existing.capabilities ?? null,
-          adapterType: existing.adapterType ?? "process",
+          adapterType: existing.adapterType ?? "hermes_local",
           adapterConfig:
             existing.agentDefaultsPayload &&
             typeof existing.agentDefaultsPayload === "object"

@@ -8,6 +8,13 @@ export const createGoalSchema = z.object({
   status: z.enum(GOAL_STATUSES).optional().default("planned"),
   parentId: z.string().uuid().optional().nullable(),
   ownerAgentId: z.string().uuid().optional().nullable(),
+  requiredSkills: z.array(z.string().min(1)).default([]),
+  supportPacks: z.array(z.object({ id: z.string().min(1), version: z.string().min(1).optional(), required: z.boolean().default(true) })).default([]),
+  requiredCapabilities: z.array(z.string().min(1)).default([]),
+  inputPaths: z.array(z.string().min(1)).default([]),
+  outputPaths: z.array(z.string().min(1)).default([]),
+  acceptanceCriteria: z.array(z.string().min(1)).default([]),
+  cannotCompleteIf: z.array(z.string().min(1)).default([]),
 });
 
 export type CreateGoal = z.infer<typeof createGoalSchema>;

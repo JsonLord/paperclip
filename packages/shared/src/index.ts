@@ -5,6 +5,7 @@ export {
   AUTH_BASE_URL_MODES,
   AGENT_STATUSES,
   AGENT_ADAPTER_TYPES,
+  ACTIVE_AGENT_ADAPTER_TYPES,
   AGENT_ROLES,
   AGENT_ROLE_LABELS,
   AGENT_ICON_NAMES,
@@ -165,6 +166,7 @@ export type {
   IssueAttachment,
   IssueLabel,
   Goal,
+  GoalSupportPackRef,
   Approval,
   ApprovalComment,
   BudgetPolicy,
@@ -242,6 +244,18 @@ export type {
   PluginWebhookDeliveryRecord,
   QuotaWindow,
   ProviderQuotaResult,
+  JulesProfile,
+  JulesProfileStatus,
+  CompanyJulesSource,
+  JulesSession,
+  JulesSessionStatus,
+  JulesDispatchDecision,
+  ResourcePackTier,
+  ResourcePackFile,
+  ResourcePackManifest,
+  ResourcePackSnapshot,
+  ResolvedGoalSupportPack,
+  GoalSupportResolution,
 } from "./types/index.js";
 
 export {
@@ -411,6 +425,14 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
+  createJulesProfileSchema,
+  bindJulesSourceSchema,
+  julesCallbackSchema,
+  type CreateJulesProfile,
+  type BindJulesSource,
+  resourcePackManifestSchema,
+  installResourcePackSchema,
+  type InstallResourcePack,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

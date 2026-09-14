@@ -15,6 +15,9 @@ import {
   issues,
   projects,
   projectWorkspaces,
+  julesSessions,
+  julesCapacityEvents,
+  issueWorkProducts,
 } from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -49,6 +52,7 @@ import {
   resolveExecutionWorkspaceMode,
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { goalSupportService } from "./goal-support.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -72,6 +76,18 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "opencode_local",
   "pi_local",
 ]);
+
+export function parseGitHubPullRequestUrl(value: unknown): { url: string; externalId: string } | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/);
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || !match) return null;
+    return { url: url.toString(), externalId: `${match[1]}/${match[2]}#${match[3]}` };
+  } catch {
+    return null;
+  }
+}
 
 function deriveRepoNameFromRepoUrl(repoUrl: string | null): string | null {
   const trimmed = repoUrl?.trim() ?? "";
@@ -694,6 +710,7 @@ export function heartbeatService(db: Db) {
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
+  const goalSupport = goalSupportService(db);
   const activeRunExecutions = new Set<string>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
@@ -953,12 +970,18 @@ export function heartbeatService(db: Db) {
       ? await db
           .select({
             projectId: issues.projectId,
+            goalId: issues.goalId,
             projectWorkspaceId: issues.projectWorkspaceId,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
           .then((rows) => rows[0] ?? null)
       : null;
+    const supportGoalId = issueProjectRef?.goalId ?? readNonEmptyString(context.goalId);
+    if (supportGoalId) {
+      const support = await goalSupport.resolve(supportGoalId);
+      if (support?.companyId === agent.companyId) context.goalSupport = support.resolution;
+    }
     const issueProjectId = issueProjectRef?.projectId ?? null;
     const preferredProjectWorkspaceId =
       issueProjectRef?.projectWorkspaceId ?? contextProjectWorkspaceId ?? null;
@@ -2119,6 +2142,14 @@ export function heartbeatService(db: Db) {
           message: "adapter invocation",
           payload: meta as unknown as Record<string, unknown>,
         });
+        const remote = meta.adapterType === "jules" ? parseObject(parseObject(meta.context).julesSession) : {};
+        const remoteId = typeof remote.id === "string" ? remote.id : null;
+        const profileId = typeof remote.profileId === "string" ? remote.profileId : null;
+        const companySourceId = typeof remote.companySourceId === "string" ? remote.companySourceId : null;
+        if (remoteId && profileId && companySourceId) {
+          const inserted = await db.insert(julesSessions).values({ companyId: agent.companyId, profileId, companySourceId, paperclipRunId: run.id, julesSessionId: remoteId, status: "queued", outcomeId: issueId }).onConflictDoNothing().returning();
+          if (inserted[0]) await db.insert(julesCapacityEvents).values({ profileId, companyId: agent.companyId, sessionId: inserted[0].id, eventType: "session_started", details: { paperclipRunId: run.id } });
+        }
       };
 
       const adapter = getServerAdapter(agent.adapterType);
@@ -2146,6 +2177,44 @@ export function heartbeatService(db: Db) {
         onMeta: onAdapterMeta,
         authToken: authToken ?? undefined,
       });
+      if (agent.adapterType === "jules") {
+        const result = parseObject(adapterResult.resultJson);
+        const pullRequest = parseGitHubPullRequestUrl(result.pullRequestUrl);
+        const remoteSessionId = readNonEmptyString(result.julesSessionId);
+        if (remoteSessionId) {
+          await db.update(julesSessions).set({
+            status: readNonEmptyString(result.state)?.toLowerCase() ?? "queued",
+            pullRequestUrl: pullRequest?.url ?? null,
+            completionCandidate: result.completionCandidate === true,
+            resultJson: result,
+            updatedAt: new Date(),
+          }).where(eq(julesSessions.paperclipRunId, run.id));
+        }
+        if (issueId && pullRequest) {
+          const existing = await db.select({ id: issueWorkProducts.id }).from(issueWorkProducts).where(and(
+            eq(issueWorkProducts.companyId, agent.companyId),
+            eq(issueWorkProducts.issueId, issueId),
+            eq(issueWorkProducts.provider, "github"),
+            eq(issueWorkProducts.externalId, pullRequest.externalId),
+          )).limit(1);
+          if (!existing[0]) await db.insert(issueWorkProducts).values({
+            companyId: agent.companyId,
+            projectId: issueRef?.projectId ?? null,
+            issueId,
+            type: "pull_request",
+            provider: "github",
+            externalId: pullRequest.externalId,
+            title: `Jules pull request ${pullRequest.externalId}`,
+            url: pullRequest.url,
+            status: "candidate",
+            reviewState: "pending",
+            isPrimary: true,
+            summary: "Registered automatically from the Jules remote session. Requires Paperclip validation and review.",
+            createdByRunId: run.id,
+            metadata: { julesSessionId: remoteSessionId, completionCandidate: result.completionCandidate === true },
+          });
+        }
+      }
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
             db,
