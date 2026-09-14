@@ -1972,3 +1972,844 @@ Do not treat an existing DB table or type as proof that the workflow using it is
 The governing principle remains:
 
 > Paperclip controls. Hermes reasons. Jules works. Linear plans. Firm structures. GitHub remembers. Evidence decides.
+
+---
+
+# 44. P1/P2 — FounderOS business application layer
+
+The adaptation must not stop at Jules orchestration. Jules is only the execution substrate. FounderOS needs an explicit business application layer that turns validated company state into repeatable operating systems, goals, resource-backed artifacts and real market actions.
+
+Use this conceptual stack:
+
+```text
+1. BUSINESS MEMORY
+   Business Second Brain
+   Sales Second Brain
+   Firm
+   Evidence / claims / assumptions / decisions
+
+2. OPERATING SYSTEMS
+   Market validation
+   Customer discovery
+   Prospecting
+   Sales
+   Offer creation
+   Content and distribution
+   Campaign management
+   Crowdfunding launch
+   Finance
+   Business planning
+   Pitching
+   Red team
+
+3. SKILLS + RESOURCE PACKS
+   Methods, layouts, templates, examples, rubrics,
+   source guidance, channel rules, quality gates
+
+4. GOALS
+   Evidence-oriented outcomes with explicit inputs,
+   outputs, required support and completion gates
+
+5. EXECUTION
+   Hermes → Paperclip → Jules → tools
+```
+
+Canonical distinction:
+
+```text
+SYSTEM        = long-running business loop
+SKILL         = how to reason or perform a method
+RESOURCE PACK = concrete template/layout/example/reference
+GOAL          = desired business outcome
+ARTIFACT      = tangible result
+EVIDENCE      = what reality told the company
+WORKER        = Jules or another approved executor used to achieve the goal
+```
+
+Codex must preserve this distinction in data structures and file organization. A skill is not a goal, a template is not evidence, and a produced artifact is not validation simply because it exists.
+
+---
+
+# 45. P1/P2 — Standard business systems catalog
+
+FounderOS should expose a first-class catalog of business systems. Each system defines its durable loop, allowed goal types, required state, output families and evidence feedback path.
+
+Minimum systems:
+
+| System | Main inputs | Typical outputs |
+|---|---|---|
+| Venture Intelligence | overview, landing page, research | venture thesis, assumption register, validation map |
+| Market Intelligence | external research, search data | market analysis, competitor map, TAM/SAM/SOM |
+| Customer Discovery | interviews, calls, observation | problem report, JTBD, ICP, customer language |
+| Offer Engine | ICP + problem evidence | value proposition, offer variants, pricing hypotheses |
+| Business Model Engine | validated offer, channels, economics | Business Model Canvas |
+| Sales Second Brain | prospects, interactions, calls | accounts, objections, opportunities, next actions |
+| Prospecting Engine | ICP | prospect universe, contact strategy, watering holes |
+| Fake-Door Engine | offer hypothesis | landing page, experiment, analytics plan |
+| Content Engine | evidence + positioning | social posts, articles, email, video scripts |
+| Campaign Engine | content + offer + audience | campaign plan, variants, publishing schedule |
+| Crowdfunding Engine | validated product + audience | Kickstarter/crowdfunding campaign package |
+| GTM Engine | channel and experiment evidence | GTM plan, acquisition experiments |
+| Financial Case | validated assumptions | financial plan, scenarios, unit economics |
+| Business Plan Compiler | canonical company state | complete business plan |
+| Pitch Compiler | canonical business case | pitch deck + evidence map |
+| Red Team | whole evidence graph | BUILD / ITERATE / PIVOT / KILL |
+
+System definitions belong in FounderOS content, for example:
+
+```text
+company-package/systems/
+```
+
+Paperclip only needs enough metadata to understand dependencies, wake conditions, eligible goals and completion state.
+
+---
+
+# 46. P1 — FounderOS Goal Library
+
+Create a reusable goal library in `JsonLord/FounderOS-DEMO` rather than encoding business outcomes only as hard-coded Jules templates.
+
+Recommended structure:
+
+```text
+company-package/goals/
+├── validation/
+│   ├── validate-market.yaml
+│   ├── validate-problem.yaml
+│   ├── validate-icp.yaml
+│   ├── validate-offer.yaml
+│   └── validate-demand.yaml
+├── sales/
+│   ├── build-prospect-universe.yaml
+│   ├── run-discovery.yaml
+│   ├── synthesize-sales-calls.yaml
+│   └── validate-wtp.yaml
+├── content/
+│   ├── define-content-strategy.yaml
+│   ├── derive-content-pillars.yaml
+│   ├── create-content-campaign.yaml
+│   ├── produce-content-package.yaml
+│   └── measure-content-demand.yaml
+├── crowdfunding/
+│   ├── assess-crowdfunding-fit.yaml
+│   ├── prepare-kickstarter.yaml
+│   ├── build-kickstarter-campaign.yaml
+│   ├── prepare-kickstarter-prelaunch.yaml
+│   └── optimize-kickstarter-campaign.yaml
+├── business-case/
+│   ├── compile-bmc.yaml
+│   ├── compile-business-plan.yaml
+│   ├── compile-financial-case.yaml
+│   └── compile-pitch.yaml
+└── governance/
+    └── red-team-build-decision.yaml
+```
+
+Every goal definition should support at least:
+
+```text
+id
+system
+objective
+ownerRole
+requiredSkills
+supportPacks
+requiredCapabilities
+inputPaths
+outputPaths
+acceptanceCriteria
+cannotCompleteIf
+externalActionPolicy
+writeScope
+wakeConditions
+nextGoalHints
+```
+
+Hermes should choose from this goal catalog based on current company state rather than inventing arbitrary goal types whenever possible.
+
+---
+
+# 47. P1/P2 — Business Model Canvas compiler
+
+The Business Model Canvas should be a compiled evidence-backed view, not a one-off generated document.
+
+Create a goal equivalent to:
+
+```yaml
+id: compile-business-model-canvas
+system: business-model
+objective: >
+  Compile the current evidence-backed business model from canonical company state.
+requiredSkills:
+  - business-model-canvas-design
+  - jobs-to-be-done
+  - value-proposition-design
+  - bpw-business-model-canvas
+  - bpw-evidence-and-source-discipline
+supportPacks:
+  - bmc.standard
+  - bpw.bmc
+inputs:
+  - firm/**
+  - evidence/**
+  - business-case/CUSTOMER_PROBLEM_REPORT.md
+  - business-case/MARKET_ANALYSIS.md
+  - business-case/ECONOMICS.md
+outputs:
+  - business-case/BUSINESS_MODEL_CANVAS.md
+  - business-case/BUSINESS_MODEL_CANVAS.yaml
+acceptanceCriteria:
+  - all nine blocks are present
+  - each block carries confidence/evidence status
+  - material claims map to evidence
+  - unresolved assumptions remain explicit
+  - customer segments express JTBD where supported
+  - revenues and costs agree with the financial case
+```
+
+Create BMC resources such as:
+
+```text
+resources/business-model/bmc/
+├── RESOURCE.md
+├── manifest.yaml
+├── canvas-contract.yaml
+├── block-guidance.md
+├── evidence-map.md
+├── layout.md
+├── examples/
+└── quality-gate.md
+```
+
+The BMC may synthesize existing company state but may not silently create missing market facts.
+
+---
+
+# 48. P1/P2 — Business Plan compiler as a derived company view
+
+The business plan must behave as a compiler over canonical company state.
+
+Required dependency graph:
+
+```text
+Firm
++
+evidence
++
+BMC
++
+market analysis
++
+financial case
++
+GTM
++
+team information
+        ↓
+BUSINESS PLAN COMPILER
+        ↓
+Executive Summary
+Product / Service
+Founding Team
+Market Analysis
+Marketing
+Company / Organisation
+Financing / Financial Planning
+Sustainability integration
+```
+
+Recommended resource structure:
+
+```text
+resources/business-plan/bpw/
+├── RESOURCE.md
+├── manifest.yaml
+├── chapter-contract.yaml
+├── required-evidence.yaml
+├── sustainability-guide.md
+├── evaluation-rubric.md
+├── layout.md
+└── examples/
+```
+
+Each chapter should define:
+
+```text
+required inputs
+permitted assumptions
+required source/evidence mapping
+minimum completeness
+cross-chapter consistency checks
+quality gates
+```
+
+The business plan is downstream synthesis. It is never a source of new evidence merely because a model wrote it.
+
+---
+
+# 49. P1/P2 — Pitch compiler and presentation support
+
+Extend the existing pitch compiler into a resource-backed presentation system.
+
+Keep the evidence-first ten-step sequence, but add actual layout and presentation support:
+
+```text
+resources/pitch/bpw-10-step/
+├── RESOURCE.md
+├── manifest.yaml
+├── source/
+├── slide-contract.yaml
+├── layout.md
+├── visual-patterns.md
+├── chart-guidance.md
+├── evidence-map.md
+├── examples/
+└── quality-gate.md
+```
+
+Responsibility split:
+
+```text
+Firm/evidence/business case
+→ decide what is true and supportable
+
+Pitch compiler
+→ decide story sequence and claim selection
+
+Pitch resource pack
+→ define required slide structure/layout guidance
+
+Stitch/design tooling
+→ assist visual implementation
+
+Design judgment pack
+→ review actual presentation quality
+```
+
+Stitch must not decide which traction or market claims are true.
+
+Required goal outputs should include at least:
+
+```text
+pitch/PITCH_DECK.*
+pitch/PITCH_EVIDENCE_MAP.md
+pitch/SOURCE_PROVENANCE.md
+```
+
+---
+
+# 50. P1/P2 — Crowdfunding / Kickstarter operating system
+
+Add a first-class crowdfunding operating system. Do not model crowdfunding as merely "write Kickstarter copy."
+
+End-to-end loop:
+
+```text
+validated problem
+→ validated audience
+→ product/offer
+→ campaign economics
+→ campaign story
+→ reward structure
+→ campaign page
+→ launch assets
+→ pre-launch audience
+→ approved publication
+→ launch
+→ campaign updates/community
+→ conversion and pledge evidence
+→ revised campaign/company state
+```
+
+## 50.1 Kickstarter/crowdfunding resource pack
+
+Create:
+
+```text
+resources/crowdfunding/kickstarter/
+├── RESOURCE.md
+├── manifest.yaml
+├── campaign-page-contract.yaml
+├── campaign-story-framework.md
+├── reward-tier-framework.md
+├── faq-template.md
+├── risk-disclosure-guide.md
+├── visual-shot-list.md
+├── campaign-video-structure.md
+├── prelaunch-checklist.md
+├── launch-calendar.yaml
+├── update-template.md
+├── social-launch-sequence.md
+├── email-launch-sequence.md
+├── evidence-map.md
+└── quality-gate.md
+```
+
+Do not hard-code current Kickstarter platform rules into permanent resource prose where they can become stale. Separate durable campaign methodology from a current-platform-readiness check that must verify live rules before account creation, publishing, promotion, reward claims or other side effects.
+
+## 50.2 Crowdfunding goals
+
+Minimum goals:
+
+```text
+assess-crowdfunding-fit
+prepare-kickstarter-case
+build-kickstarter-campaign
+prepare-kickstarter-prelaunch
+produce-kickstarter-assets
+prepare-kickstarter-launch-content
+launch-kickstarter-campaign
+measure-kickstarter-campaign
+optimize-kickstarter-campaign
+```
+
+`assess-crowdfunding-fit` must be able to conclude that Kickstarter/crowdfunding is not currently justified.
+
+## 50.3 Campaign outputs
+
+Recommended company-repo outputs:
+
+```text
+campaign/
+├── KICKSTARTER_PAGE.md
+├── CAMPAIGN_STORY.md
+├── REWARD_TIERS.yaml
+├── FAQ.md
+├── RISKS_AND_CHALLENGES.md
+├── VIDEO_SCRIPT.md
+├── SHOT_LIST.md
+├── PRELAUNCH_PLAN.md
+├── LAUNCH_CALENDAR.md
+├── EMAIL_SEQUENCE.md
+├── SOCIAL_CONTENT/
+└── EVIDENCE_MAP.md
+```
+
+All product capabilities, delivery dates, manufacturing claims, backer counts, traction claims, testimonials and social proof must map to evidence or remain explicitly hypothetical.
+
+Account creation, publishing, paid promotion, payment configuration and other consequential side effects remain governed by Paperclip approval/action policy.
+
+---
+
+# 51. P1/P2 — Content & Distribution OS for social media
+
+Turn the existing content-demand and creative loops into a complete content operating system.
+
+Core loop:
+
+```text
+COMPANY EVIDENCE
+      ↓
+CONTENT STRATEGY
+      ↓
+CONTENT PILLARS
+      ↓
+CAMPAIGNS
+      ↓
+CONTENT ATOMS
+      ↓
+CHANNEL ADAPTATION
+      ↓
+CREATIVE REVIEW
+      ↓
+APPROVAL
+      ↓
+PUBLISH
+      ↓
+MEASURE
+      ↓
+LEARN
+      ↓
+updated evidence / offer / content strategy
+```
+
+Minimum goals:
+
+```text
+define-content-strategy
+derive-content-pillars
+create-content-campaign
+produce-content-package
+adapt-content-to-channel
+review-creative
+schedule-content
+publish-content
+measure-content-demand
+update-content-strategy
+```
+
+Publishing is a governed external action. Drafting, adaptation and review may run autonomously when policy allows.
+
+---
+
+# 52. P1/P2 — Channel-specific social resource packs
+
+Create platform/channel support packs rather than one generic social prompt.
+
+Recommended structure:
+
+```text
+resources/content/
+├── core/
+│   ├── RESOURCE.md
+│   ├── trust-flywheel.md
+│   ├── evidence-to-content.md
+│   ├── hook-framework.md
+│   ├── cta-framework.md
+│   ├── campaign-contract.yaml
+│   └── creative-quality-gate.md
+├── linkedin/
+├── instagram/
+├── tiktok/
+├── youtube/
+├── x/
+├── reddit/
+├── email/
+└── kickstarter/
+```
+
+Each channel pack should distinguish durable communication principles from current platform constraints and define where applicable:
+
+```text
+format
+length/range guidance
+hook style
+visual conventions
+CTA patterns
+cadence guidance
+platform restrictions
+examples
+quality gates
+analytics interpretation
+current-rule verification requirements before publishing
+```
+
+One validated insight may be atomized into several assets, for example:
+
+```text
+customer insight
+→ LinkedIn post
+→ X thread + short posts
+→ Instagram carousel + captions
+→ TikTok/Reel script
+→ YouTube Short script
+→ newsletter section
+→ Kickstarter campaign update
+```
+
+However, channel versions must be adapted to the medium rather than copied mechanically.
+
+---
+
+# 53. P1/P2 — Campaign goals must optimize business learning, not output volume
+
+A campaign is an outcome contract, not a request for a number of posts.
+
+Recommended campaign contract:
+
+```yaml
+objective: >
+  Determine whether segment X responds to problem Y and offer Z.
+hypothesis: "..."
+audience: "..."
+offer: "..."
+content:
+  - posts
+  - creatives
+  - landing variants
+  - email sequence
+channels:
+  - instagram
+  - linkedin
+  - reddit
+metrics:
+  - qualified_clicks
+  - replies
+  - signups
+  - bookings
+  - commercial_commitments
+decisionRules:
+  - continue
+  - revise
+  - stop
+```
+
+Do not treat "20 posts produced" as campaign success.
+
+Campaign completion should answer a business question and write the measured result back into evidence/Firm.
+
+---
+
+# 54. P1/P2 — Sales output system on top of Sales Second Brain
+
+The Sales Second Brain must actively drive sales goals and artifacts rather than only retaining notes.
+
+Minimum sales goals:
+
+```text
+build-prospect-universe
+qualify-prospects
+prepare-outreach-sequence
+run-diagnostic-outreach
+prepare-discovery-calls
+synthesize-sales-calls
+identify-objection-patterns
+prepare-offer-followup
+seek-commercial-commitment
+update-opportunity-state
+```
+
+Recommended outputs:
+
+```text
+sales/
+├── ICP.md
+├── PROSPECT_UNIVERSE.*
+├── OUTREACH_SEQUENCE.md
+├── DISCOVERY_CALL_GUIDE.md
+├── OBJECTION_LIBRARY.md
+├── FOLLOWUP_LIBRARY.md
+├── OPPORTUNITY_SUMMARY.md
+└── SALES_EVIDENCE_REPORT.md
+```
+
+Actual outreach sends, calls, payment/deposit actions or account mutations remain controlled external actions. Preparation and synthesis may be autonomous when allowed.
+
+Sales conclusions must preserve their source interaction. AI-written notes derived from no actual customer interaction are not customer evidence.
+
+---
+
+# 55. P1/P2 — Offer Engine and evidence-to-output chain
+
+Make the previously defined avatar/ICP → problem → offer → landing-page dependency chain a formal system dependency graph.
+
+```text
+customer/ICP evidence
+      ↓
+problem + JTBD
+      ↓
+value proposition
+      ↓
+offer variants
+      ↓
+sample/prototype where useful
+      ↓
+landing/fake door
+      ↓
+channel/campaign distribution
+      ↓
+behavior
+      ↓
+conversation
+      ↓
+commercial commitment
+      ↓
+delivery / repeat / economics
+```
+
+Derived outputs such as BMC, business plan, pitch and crowdfunding campaign should reference this same canonical offer/evidence state instead of maintaining independent versions of the company's proposition.
+
+When upstream evidence changes materially, Paperclip/Hermes should identify downstream artifacts that are stale and propose recompilation rather than silently leaving contradictory documents in the repo.
+
+---
+
+# 56. P1/P2 — Resource-pack taxonomy for the business application layer
+
+Extend the resource registry to cover the complete business application layer.
+
+Target FounderOS source tree:
+
+```text
+company-package/resources/
+├── registry.yaml
+├── core/
+│   ├── evidence-discipline/
+│   ├── goal-contracts/
+│   └── governance/
+├── validation/
+├── market-analysis/
+├── customer-discovery/
+├── business-model/
+├── offers/
+├── fake-door/
+├── sales/
+├── prospecting/
+├── content/
+├── campaigns/
+├── crowdfunding/
+├── search/
+├── design/
+├── finance/
+├── business-plan/
+├── pitch/
+└── red-team/
+```
+
+Every pack should contain only what is needed for its domain and may include:
+
+```text
+RESOURCE.md
+manifest.yaml
+contract.yaml
+layout.md or template
+source/
+examples/
+evidence-map.md
+quality-gate.md
+```
+
+Resource packs should support versioning and explicit upgrades. A company artifact must be traceable to the resource-pack version/source commit used to produce it.
+
+---
+
+# 57. P1/P2 — Goal Support Resolver must compose the business stack
+
+The Goal Support Resolver should return the smallest complete support bundle for the current outcome.
+
+Example pitch resolution:
+
+```text
+goal: compile-pitch
+      ↓
+role: pitch-agent
+      ↓
+skills:
+  bpw-pitch-deck-10-step
+  pitch-storytelling
+  bpw-evidence-and-source-discipline
+      ↓
+support:
+  pitch.bpw-10-step
+  design.judgment
+      ↓
+capabilities:
+  firm
+  stitch when presentation implementation needs it
+      ↓
+inputs:
+  business-case/**
+  evidence/**
+  firm/**
+      ↓
+acceptance gates
+```
+
+Example content resolution:
+
+```text
+goal: produce-content-package
+      ↓
+content strategy + target channel
+      ↓
+core content pack
++ selected channel pack
++ campaign contract
++ creative review pack
+```
+
+Do not inject the entire FounderOS library into every Jules session.
+
+---
+
+# 58. P1/P2 — External-action mapping for content and crowdfunding
+
+The business application layer must clearly distinguish preparation from side effects.
+
+Examples:
+
+```text
+Draft Kickstarter page                 → autonomous/reviewable artifact
+Create reward-tier proposal            → autonomous/reviewable artifact
+Create Instagram post                  → autonomous/reviewable artifact
+Create outreach sequence               → autonomous/reviewable artifact
+
+Publish Kickstarter campaign           → external action / approval
+Create or change Kickstarter account   → external action / approval
+Publish social post                    → external action / approval or preauthorization
+Spend ad budget                        → external action / approval
+Send outreach                          → external action / approval or scoped preauthorization
+Configure payment/deposit collection   → external action / approval
+```
+
+Before platform-specific publication/account automation, verify current platform terms, promotion rules and automation constraints.
+
+Audience presence never implies commercial permission, and commercial permission never proves channel conversion.
+
+---
+
+# 59. P2 — Cross-system feedback and stale-artifact management
+
+FounderOS should treat major outputs as derived views with dependency metadata.
+
+Examples:
+
+```text
+new customer interviews
+→ Customer Problem Report may become stale
+→ Offer may become stale
+→ BMC may become stale
+→ business plan sections may become stale
+→ pitch may become stale
+→ Kickstarter positioning/content may become stale
+
+new price/WTP evidence
+→ economics may become stale
+→ BMC revenue block may become stale
+→ financial case may become stale
+→ pitch business-model slide may become stale
+→ crowdfunding reward tiers may become stale
+```
+
+Record for important compiled artifacts:
+
+```text
+source commit
+input artifact/evidence IDs
+resource-pack versions
+compiler goal ID
+produced commit/PR
+last validated at
+staleness reason when invalidated
+```
+
+Hermes may recommend recompilation; Paperclip tracks the deterministic dependency/staleness relationship.
+
+---
+
+# 60. P1/P2 — Business application definition of done
+
+The business application layer is complete only when the following works without ad-hoc prompting:
+
+```text
+1. A company has canonical GitHub/Firm business state and evidence.
+
+2. Hermes can select a registered FounderOS goal rather than inventing an unstructured task.
+
+3. Goal Support Resolver supplies the exact skills, resource packs, capabilities, input paths and gates for that goal.
+
+4. Jules can produce, through standard goals:
+   - an evidence-backed BMC,
+   - an evidence-backed business plan,
+   - a financial case,
+   - a pitch deck with evidence map,
+   - a prospecting/sales package,
+   - a content strategy and channel-specific social assets,
+   - campaign packages tied to measurable business hypotheses,
+   - a crowdfunding/Kickstarter campaign package when justified.
+
+5. Every output can be traced to canonical input state and versioned support resources.
+
+6. Outputs do not silently become evidence.
+
+7. Publishing, outreach, account changes, payments and spend route through external-action governance.
+
+8. Real market results feed back into evidence/Firm and may invalidate downstream outputs.
+
+9. Stale derived artifacts are detected and proposed for recompilation.
+
+10. The system can conclude that a planned artifact or campaign should not be produced because prerequisite evidence is insufficient.
+```
+
+The governing product principle is:
+
+> FounderOS does not exist to generate business documents. It exists to turn evidence into business decisions, business decisions into goal-oriented execution, and execution back into stronger evidence.
