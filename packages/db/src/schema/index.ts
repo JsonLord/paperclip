@@ -53,4 +53,13 @@ export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { firmSnapshots } from "./firm_snapshots.js";
-export { julesProfiles, companyJulesSources, julesProfileSources, julesSessions, julesCapacityEvents, julesCallbackEvents } from "./jules.js";
+export { julesProfiles, companyJulesSources, julesProfileSources, julesSessions, julesSessionActivities, julesRepositoryLeases, julesCapacityEvents, julesCallbackEvents, julesValidationResults, julesManagerDecisions } from "./jules.js";
+
+export { companyRepositoryBindings, founderosBootstraps } from "./founderos_bootstrap.js";
+export { founderosContentSources, goalTemplateInstances, founderosSystemActivations } from "./founderos_content.js";
+export { customerInteractions, customerEvidence, marketWaits, artifactStaleness } from "./customer_discovery.js";
+export { marketSources, marketClaims, marketEstimates, competitorRecords } from "./market_intelligence.js";
+export { offerHypotheses, demandExperiments, demandEvents } from "./offer_demand.js";
+export { salesProspects, salesInteractions, commercialCommitments, salesQuotes } from "./commercial_validation.js";
+
+export { companyDeployments, runtimeObservations } from "./mvp_reliability.js";

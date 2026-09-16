@@ -15,8 +15,6 @@ import {
   issues,
   projects,
   projectWorkspaces,
-  julesSessions,
-  julesCapacityEvents,
   issueWorkProducts,
 } from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
@@ -53,6 +51,9 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { goalSupportService } from "./goal-support.js";
+import { julesSessionService } from "./jules-sessions.js";
+import { requestJulesReconciliation } from "./jules-reconciler.js";
+import { julesCapacityBroker, resolveJulesExecutionRequirements } from "./jules-capacity-broker.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -711,6 +712,8 @@ export function heartbeatService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const goalSupport = goalSupportService(db);
+  const julesLifecycle = julesSessionService(db);
+  const julesBroker = julesCapacityBroker(db);
   const activeRunExecutions = new Set<string>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
@@ -1663,6 +1666,7 @@ export function heartbeatService(db: Db) {
             identifier: issues.identifier,
             title: issues.title,
             projectId: issues.projectId,
+            goalId: issues.goalId,
             projectWorkspaceId: issues.projectWorkspaceId,
             executionWorkspaceId: issues.executionWorkspaceId,
             executionWorkspacePreference: issues.executionWorkspacePreference,
@@ -1728,7 +1732,7 @@ export function heartbeatService(db: Db) {
     const mergedConfig = issueAssigneeOverrides?.adapterConfig
       ? { ...workspaceManagedConfig, ...issueAssigneeOverrides.adapterConfig }
       : workspaceManagedConfig;
-    const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
+    let { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
       agent.companyId,
       mergedConfig,
     );
@@ -1738,6 +1742,7 @@ export function heartbeatService(db: Db) {
           identifier: issueContext.identifier,
           title: issueContext.title,
           projectId: issueContext.projectId,
+          goalId: issueContext.goalId,
           projectWorkspaceId: issueContext.projectWorkspaceId,
           executionWorkspaceId: issueContext.executionWorkspaceId,
           executionWorkspacePreference: issueContext.executionWorkspacePreference,
@@ -2147,8 +2152,18 @@ export function heartbeatService(db: Db) {
         const profileId = typeof remote.profileId === "string" ? remote.profileId : null;
         const companySourceId = typeof remote.companySourceId === "string" ? remote.companySourceId : null;
         if (remoteId && profileId && companySourceId) {
-          const inserted = await db.insert(julesSessions).values({ companyId: agent.companyId, profileId, companySourceId, paperclipRunId: run.id, julesSessionId: remoteId, status: "queued", outcomeId: issueId }).onConflictDoNothing().returning();
-          if (inserted[0]) await db.insert(julesCapacityEvents).values({ profileId, companyId: agent.companyId, sessionId: inserted[0].id, eventType: "session_started", details: { paperclipRunId: run.id } });
+          await julesLifecycle.attachDispatchedSession({
+            companyId: agent.companyId,
+            profileId,
+            companySourceId,
+            paperclipRunId: run.id,
+            julesSessionId: remoteId,
+            agentId: agent.id,
+            goalId: issueRef?.goalId ?? readNonEmptyString(context.goalId),
+            projectId: issueRef?.projectId ?? readNonEmptyString(context.projectId),
+            issueId,
+            outcomeId: issueId,
+          });
         }
       };
 
@@ -2167,28 +2182,70 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
-      const adapterResult = await adapter.execute({
-        runId: run.id,
-        agent,
-        runtime: runtimeForAdapter,
-        config: resolvedConfig,
-        context,
-        onLog,
-        onMeta: onAdapterMeta,
-        authToken: authToken ?? undefined,
-      });
+      let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
+      if (agent.adapterType === "jules") {
+        const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);
+        julesAdmission = await julesBroker.admit({
+          companyId: agent.companyId,
+          paperclipRunId: run.id,
+          issueId,
+          repository: readNonEmptyString(resolvedConfig.repository),
+          requiredCapabilities: requirements.requiredCapabilities,
+          writeScopes: requirements.writeScopes.length ? requirements.writeScopes : ["**"],
+          urgent: context.julesUrgentAuthorized === true,
+          priority: parseObject(context.julesPriority),
+        });
+        if (julesAdmission.kind === "ADMITTED") {
+          resolvedConfig = {
+            ...resolvedConfig,
+            source: julesAdmission.source,
+            repository: julesAdmission.repository,
+            startingBranch: julesAdmission.startingBranch,
+            profileId: julesAdmission.profileId,
+            companySourceId: julesAdmission.companySourceId,
+            writeScopes: julesAdmission.writeScopes,
+            env: { ...parseObject(resolvedConfig.env), JULES_API_KEY: julesAdmission.apiKey },
+          };
+          secretKeys.add("JULES_API_KEY");
+        }
+      }
+      let adapterResult: AdapterExecutionResult;
+      if (julesAdmission?.kind === "DENIED") {
+        adapterResult = {
+          exitCode: 1,
+          signal: null,
+          timedOut: false,
+          errorCode: `jules_${julesAdmission.code.toLowerCase()}`,
+          errorMessage: julesAdmission.reason,
+          resultJson: { admission: "DENIED", code: julesAdmission.code },
+        };
+      } else {
+        try {
+          adapterResult = await adapter.execute({
+            runId: run.id,
+            agent,
+            runtime: runtimeForAdapter,
+            config: resolvedConfig,
+            context,
+            onLog,
+            onMeta: onAdapterMeta,
+            authToken: authToken ?? undefined,
+          });
+        } catch (error) {
+          if (julesAdmission?.kind === "ADMITTED") await julesBroker.releaseAdmission(run.id);
+          throw error;
+        }
+      }
       if (agent.adapterType === "jules") {
         const result = parseObject(adapterResult.resultJson);
         const pullRequest = parseGitHubPullRequestUrl(result.pullRequestUrl);
         const remoteSessionId = readNonEmptyString(result.julesSessionId);
         if (remoteSessionId) {
-          await db.update(julesSessions).set({
-            status: readNonEmptyString(result.state)?.toLowerCase() ?? "queued",
-            pullRequestUrl: pullRequest?.url ?? null,
-            completionCandidate: result.completionCandidate === true,
-            resultJson: result,
-            updatedAt: new Date(),
-          }).where(eq(julesSessions.paperclipRunId, run.id));
+          // The adapter result means dispatch/attachment succeeded, not that the
+          // native outcome completed. The durable reconciler owns remote state.
+          requestJulesReconciliation();
+        } else if (julesAdmission?.kind === "ADMITTED") {
+          await julesBroker.releaseAdmission(run.id);
         }
         if (issueId && pullRequest) {
           const existing = await db.select({ id: issueWorkProducts.id }).from(issueWorkProducts).where(and(

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { goals, resourcePackSnapshots, type Db } from "@paperclipai/db";
+import { goalTemplateInstances, goals, resourcePackSnapshots, type Db } from "@paperclipai/db";
 import type { GoalSupportResolution, ResolvedGoalSupportPack } from "@paperclipai/shared";
 
 function joinRepoPath(root: string, child: string): string {
@@ -59,7 +59,16 @@ export function goalSupportService(db: Db) {
       if (!goal) return null;
       const ids = [...new Set(goal.supportPacks.map((pack) => pack.id))];
       const snapshots = ids.length ? await db.select().from(resourcePackSnapshots).where(and(eq(resourcePackSnapshots.companyId, goal.companyId), inArray(resourcePackSnapshots.packId, ids))).orderBy(desc(resourcePackSnapshots.installedAt)) : [];
-      return { companyId: goal.companyId, resolution: resolveGoalSupportFromRows(goal, snapshots) };
+      const provenance = await db.select().from(goalTemplateInstances).where(eq(goalTemplateInstances.goalId, goalId)).limit(1).then((rows) => rows[0] ?? null);
+      const resolution = resolveGoalSupportFromRows(goal, snapshots);
+      if (provenance) {
+        const contract = provenance.contractSnapshot as { writeScope?: string[]; externalActionPolicy?: string; firm?: { required: boolean; buildBefore: boolean; buildAfter: boolean } };
+        resolution.templateProvenance = { templateId: provenance.templateId, templateVersion: provenance.templateVersion, systemId: provenance.systemId, sourceRepository: provenance.sourceRepository, sourceCommit: provenance.sourceCommit };
+        resolution.writeScope = contract.writeScope ?? [];
+        resolution.externalActionPolicy = contract.externalActionPolicy;
+        resolution.firm = contract.firm;
+      }
+      return { companyId: goal.companyId, resolution };
     },
   };
 }

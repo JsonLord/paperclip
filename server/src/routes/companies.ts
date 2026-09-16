@@ -1,5 +1,7 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import { JulesApiClient } from "@paperclipai/adapter-jules/server";
+import { issues, type Db } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import {
   companyPortabilityExportSchema,
   companyPortabilityImportSchema,
@@ -14,9 +16,12 @@ import {
   budgetService,
   companyPortabilityService,
   companyService,
-  firmService,
+  founderOsBootstrapService,
+  persistedJulesSourceResolver,
+  heartbeatService,
   logActivity,
 } from "../services/index.js";
+import { githubFounderOsRepositoryWriter, inspectCompanyRepository } from "../services/founderos-github.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function companyRoutes(db: Db) {
@@ -25,7 +30,6 @@ export function companyRoutes(db: Db) {
   const portability = companyPortabilityService(db);
   const access = accessService(db);
   const budgets = budgetService(db);
-  const firm = firmService(db);
 
   router.get("/", async (req, res) => {
     assertBoard(req);
@@ -115,6 +119,26 @@ export function companyRoutes(db: Db) {
     res.json(result);
   });
 
+  router.post("/import/github", async (req, res) => {
+    assertBoard(req);
+    if (!(req.actor.source === "local_implicit" || req.actor.isInstanceAdmin)) throw forbidden("Instance admin required");
+    const repository = typeof req.body?.repository === "string" ? req.body.repository.trim() : "";
+    const name = typeof req.body?.name === "string" && req.body.name.trim() ? req.body.name.trim() : repository.split("/").pop();
+    const contentCommit = typeof req.body?.contentCommit === "string" ? req.body.contentCommit.trim() : "";
+    if (!repository || !name || !contentCommit) return void res.status(422).json({ error: "repository, name, and pinned contentCommit are required" });
+    const repo = await inspectCompanyRepository(repository, typeof req.body?.ref === "string" ? req.body.ref : undefined);
+    const company = await svc.create({ name, description: typeof req.body?.description === "string" ? req.body.description : `FounderOS company imported from ${repository}`, firmGithubRepo: repository });
+    await access.ensureMembership(company.id, "user", req.actor.userId ?? "local-board", "owner", "active");
+    const resolver = persistedJulesSourceResolver(db, company.id, (apiKey) => new JulesApiClient("https://jules.googleapis.com/v1alpha", apiKey));
+    const heartbeat = heartbeatService(db);
+    const bootstrap = founderOsBootstrapService(db, { contentCommit, sourceResolver: resolver, repositoryWriter: process.env.GITHUB_TOKEN ? githubFounderOsRepositoryWriter() : undefined, queueInitialOutcome: async (issueId) => {
+      const issue = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1).then((rows) => rows[0]);
+      if (issue?.assigneeAgentId) await heartbeat.invoke(issue.assigneeAgentId, "assignment", { issueId, goalId: issue.goalId, projectId: issue.projectId, source: "founderos_bootstrap" }, "system", { actorType: "system", actorId: "founderos-bootstrap" });
+    }});
+    const result = await bootstrap.bootstrap(company.id, repo);
+    res.status(201).json({ company, ...result });
+  });
+
   router.post("/", validate(createCompanySchema), async (req, res) => {
     assertBoard(req);
     if (!(req.actor.source === "local_implicit" || req.actor.isInstanceAdmin)) {
@@ -143,8 +167,6 @@ export function companyRoutes(db: Db) {
         req.actor.userId ?? "board",
       );
     }
-    // Fire-and-forget firm initialization — sets up firm context for this company's agents
-    void firm.initFirm(company.id, company.firmGithubRepo ?? null);
     res.status(201).json(company);
   });
 

@@ -1,0 +1,15 @@
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { companies } from "./companies.js";
+import { goals } from "./goals.js";
+import { projects } from "./projects.js";
+
+export const founderosContentSources = pgTable("founderos_content_sources", {
+  id: uuid("id").primaryKey().defaultRandom(), companyId: uuid("company_id").notNull().references(() => companies.id,{onDelete:"cascade"}),
+  repository: text("repository").notNull(), ref: text("ref").notNull(), commit: text("commit").notNull(), packageRoot: text("package_root").notNull().default("company-package"), registryVersion: text("registry_version").notNull(), contentVersion: text("content_version").notNull(), status: text("status").notNull().default("active"), createdAt: timestamp("created_at",{withTimezone:true}).notNull().defaultNow(), updatedAt: timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>({companySourceUnique:uniqueIndex("founderos_content_sources_company_repo_commit_uniq").on(t.companyId,t.repository,t.commit),companyIdx:index("founderos_content_sources_company_idx").on(t.companyId)}));
+export const goalTemplateInstances = pgTable("goal_template_instances", {
+  id: uuid("id").primaryKey().defaultRandom(), companyId: uuid("company_id").notNull().references(() => companies.id,{onDelete:"cascade"}), goalId: uuid("goal_id").notNull().references(() => goals.id,{onDelete:"cascade"}), parentGoalId: uuid("parent_goal_id").references(() => goals.id,{onDelete:"set null"}), templateId:text("template_id").notNull(), templateVersion:text("template_version").notNull(), systemId:text("system_id").notNull(), sourceRepository:text("source_repository").notNull(), sourceCommit:text("source_commit").notNull(), contractSnapshot:jsonb("contract_snapshot").$type<Record<string,unknown>>().notNull(), lifecycle:text("lifecycle").notNull().default("active"), createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>({activeLogicalUnique:uniqueIndex("goal_template_instances_active_logical_uniq").on(t.companyId,t.templateId,t.templateVersion,t.parentGoalId,t.lifecycle),goalUnique:uniqueIndex("goal_template_instances_goal_uniq").on(t.goalId)}));
+export const founderosSystemActivations = pgTable("founderos_system_activations", {
+ id:uuid("id").primaryKey().defaultRandom(),companyId:uuid("company_id").notNull().references(()=>companies.id,{onDelete:"cascade"}),systemId:text("system_id").notNull(),systemVersion:text("system_version").notNull(),projectId:uuid("project_id").notNull().references(()=>projects.id,{onDelete:"cascade"}),sourceRepository:text("source_repository").notNull(),sourceCommit:text("source_commit").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+},t=>({companySystemUnique:uniqueIndex("founderos_system_activations_company_system_uniq").on(t.companyId,t.systemId,t.systemVersion),projectUnique:uniqueIndex("founderos_system_activations_project_uniq").on(t.projectId)}));

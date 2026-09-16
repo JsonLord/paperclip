@@ -72,7 +72,7 @@ In short:
 
 | Area | Status | Current state | Required next step |
 |---|---|---|---|
-| Validation-first operating model | COMPLETE as spec | `spec.md` encodes Research → Prospects → Conversations → Demand → Commitment → Delivery → Retention → Economics → Build and BUILD/ITERATE/PIVOT/KILL semantics. | Enforce through runtime state machine and validators rather than prompt text alone. |
+| Validation-first operating model | COMPLETE as spec | `spec.md` encodes Problem → ICP/Market → Offer → Demand → Commercial Commitment → Usage/Value → Retention → Economics, alongside a parallel MVP reliability loop and BUILD/ITERATE/PIVOT/KILL semantics. | Enforce through runtime state machine and validators rather than prompt text alone. |
 | Evidence classification | PARTIAL | Jules prompt templates enforce evidence/source/assumption/hypothesis distinctions. | Add structured claim/evidence validators and canonical Firm/resource schemas. |
 | GitHub as durable company workspace | PARTIAL | Spec and Jules prompts treat GitHub as canonical company state. | Preserve imported repository binding automatically and remove conflicting Firm snapshot model. |
 | Paperclip as deterministic control plane | PARTIAL | DB schemas/routes exist for sessions, profiles, callbacks, goals, approvals. | Wire dispatch, reconciliation, validation, manager decisions, external-action approvals and event wakeups. |

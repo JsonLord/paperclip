@@ -1,0 +1,1 @@
+ALTER TABLE "jules_sessions" ADD COLUMN "capability_version" integer DEFAULT 1 NOT NULL;

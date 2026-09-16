@@ -1,10 +1,10 @@
 import { and, desc, eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { companies, firmSnapshots } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 const FIRM_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const DEFAULT_FIRM_REPO = "42futures/firm";
 
 interface GithubTreeItem {
   path: string;
@@ -38,9 +38,9 @@ async function fetchRepoTree(repo: string): Promise<{ sha: string; tree: GithubT
   return { sha, tree: tree.tree };
 }
 
-async function fetchFileContent(repo: string, path: string): Promise<string> {
+async function fetchFileContent(repo: string, path: string, ref: string): Promise<string> {
   const [owner, name] = repo.split("/");
-  const res = await fetch(`https://raw.githubusercontent.com/${owner}/${name}/main/${path}`);
+  const res = await fetch(`https://raw.githubusercontent.com/${owner}/${name}/${encodeURIComponent(ref)}/${path}`);
   if (!res.ok) throw new Error(`raw fetch failed: ${res.status} ${path}`);
   return res.text();
 }
@@ -51,29 +51,18 @@ async function buildFirmSnapshot(repo: string): Promise<{
   contextMarkdown: string;
 }> {
   const { sha, tree } = await fetchRepoTree(repo);
-  const jsonFiles = tree.filter((f) => f.type === "blob" && f.path?.endsWith(".json"));
-  const mdFiles = tree.filter((f) => f.type === "blob" && f.path?.endsWith(".md"));
+  const firmFiles = tree.filter((f) => f.type === "blob" && f.path?.startsWith("firm/") && f.path.endsWith(".firm"));
 
   const snapshotJson: Record<string, unknown> = { repo, sha, files: {} };
   const contextParts: string[] = [`# Firm Context — ${repo}`, `> Snapshot commit: \`${sha}\``, ""];
 
-  for (const file of jsonFiles.slice(0, 20)) {
+  for (const file of firmFiles.slice(0, 100)) {
     try {
-      const text = await fetchFileContent(repo, file.path);
-      const parsed = JSON.parse(text);
-      (snapshotJson.files as Record<string, unknown>)[file.path] = parsed;
-      contextParts.push(`## ${file.path}`, "```json", JSON.stringify(parsed, null, 2), "```", "");
+      const text = await fetchFileContent(repo, file.path, sha);
+      (snapshotJson.files as Record<string, unknown>)[file.path] = { sha256: createHash("sha256").update(text).digest("hex"), bytes: Buffer.byteLength(text) };
+      contextParts.push(`- ${file.path}`);
     } catch {
       // skip unparseable files
-    }
-  }
-
-  for (const file of mdFiles.slice(0, 5)) {
-    try {
-      const text = await fetchFileContent(repo, file.path);
-      contextParts.push(`## ${file.path}`, text, "");
-    } catch {
-      // skip
     }
   }
 
@@ -89,7 +78,8 @@ export function firmService(db: Db) {
   }
 
   async function initFirm(companyId: string, repo?: string | null): Promise<void> {
-    const resolvedRepo = repo ?? DEFAULT_FIRM_REPO;
+    if (!repo) throw new Error("Company repository binding is required before Firm initialization");
+    const resolvedRepo = repo;
     logger.info({ companyId, repo: resolvedRepo }, "firm: initializing");
     try {
       const { sha, snapshotJson, contextMarkdown } = await buildFirmSnapshot(resolvedRepo);
@@ -121,7 +111,8 @@ export function firmService(db: Db) {
       .then((rows) => rows[0] ?? null);
 
     if (!company) return;
-    const repo = company.firmGithubRepo ?? DEFAULT_FIRM_REPO;
+    const repo = company.firmGithubRepo;
+    if (!repo) return;
 
     logger.info({ companyId, repo }, "firm: refreshing");
     try {

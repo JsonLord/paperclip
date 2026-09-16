@@ -948,3 +948,8 @@ This requirement overrides any earlier wording that could be interpreted as crea
 The full operating principle is now:
 
 > **Paperclip shows and controls the organization. Hermes reasons over it. Jules executes its native goals/issues. Linear decomposes work. Firm structures business knowledge. GitHub remembers evidence and artifacts. Resource packs support each goal. Evidence decides what the company should do next.**
+
+
+# 16. Dual-track business evidence and MVP reliability
+
+The primary business track and the product reliability track are separate native Projects that may run concurrently. Commercial commitment recommends native Goals for product usage, value realization, and retention; it does not require a standalone delivery-validation stage. `MVP Reliability & Product Learning` continuously correlates the company repository, registered HF Space, runtime observations, native Issues, Jules sessions, PRs, deployment revisions and verification. A critical defect may block the affected business experiment, but routine maintenance must not pause business evidence collection. Runtime observations and product-learning evidence remain durable records; all actionable work remains native Paperclip Issues.
