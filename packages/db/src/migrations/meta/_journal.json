@@ -288,6 +288,83 @@
       "when": 1789142880596,
       "tag": "0040_minor_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789420177861,
+      "tag": "0041_wise_blacklash",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789421906527,
+      "tag": "0042_flowery_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789424895370,
+      "tag": "0043_aberrant_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789456235205,
+      "tag": "0044_amused_pete_wisdom",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1789467820080,
+      "tag": "0045_neat_maginty",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1789469464440,
+      "tag": "0046_graceful_morg",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789493809432,
+      "tag": "0047_young_gunslinger",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789495253441,
+      "tag": "0048_tearful_hemingway",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789496987773,
+      "tag": "0049_familiar_starbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789511607843,
+      "tag": "0050_glossy_turbo",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789514115906,
+      "tag": "0051_fantastic_cloak",
+      "breakpoints": true
     }
   ]
 }

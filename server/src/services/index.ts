@@ -28,4 +28,24 @@ export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
 export { reconcilePersistedRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { firmService, startFirmRefreshScheduler } from "./firm.js";
 export { selectJulesProfile, type JulesBrokerProfile, type JulesDispatchRequest } from "./jules-capacity.js";
+export { julesSessionService, JULES_REMOTE_POLLABLE_STATES } from "./jules-sessions.js";
+export { createJulesReconciler, startJulesReconciler, requestJulesReconciliation } from "./jules-reconciler.js";
+export { julesCapacityBroker, writeScopesOverlap, deterministicQueueScore, resolveJulesExecutionRequirements } from "./jules-capacity-broker.js";
+export { julesCallbackService, assertCapabilityBinding } from "./jules-callbacks.js";
+export { issueJulesRunCapability, verifyJulesRunCapability, JULES_RUN_OPERATIONS } from "./jules-run-capability.js";
+export { createJulesOutboxReconciler, startJulesOutboxReconciler, validateOutboxEvent } from "./jules-outbox.js";
+export { founderOsValidationService, validateFounderOsResult, pathAllowed, loadGitHubValidationSnapshot, validateFirmWorkspace } from "./founderos-validation/index.js";
+export { founderManagerService, parseResultJudgment, createOpenAiCompatibleFounderManagerProvider } from "./founder-manager/index.js";
+export { julesOutcomeController, enforceAttemptLimits } from "./jules-outcome-controller.js";
+export { founderOsBootstrapService, founderOsBootstrapFiles, missingBootstrapFiles, persistedJulesSourceResolver, FOUNDEROS_CONTEXT_VERSION, FOUNDEROS_CONTENT_SOURCE } from "./founderos-bootstrap.js";
+export { inspectCompanyRepository, githubFounderOsRepositoryWriter } from "./founderos-github.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
+export * from "./founderos-content/index.js";
+export { firmCliRuntime } from "./firm-cli.js";
+export { customerDiscoveryService, customerDiscoverySystem, validateProblemTemplate, assessProblemEvidence, compileDiscoveryViews, interviewPlanYaml, resolveNextDiscoveryGoal, CUSTOMER_DISCOVERY_DECISIONS, CUSTOMER_DISCOVERY_STAGES, CUSTOMER_EVIDENCE_CLASSES } from "./customer-discovery.js";
+export { marketIntelligenceService, marketIntelligenceSystem, defineInitialIcpTemplate, analyzeMarketTemplate, validateMarketEstimate, assessMarketSufficiency, compileMarketViews, MARKET_EVIDENCE_CLASSES, MARKET_DECISIONS } from "./market-intelligence.js";
+export { offerDemandService, offerEngineSystem, validateOfferTemplate, validateDemandTemplate, validateOffer, landingPageFiles, calculateDemand, DEMAND_EVENTS, DEMAND_STRENGTH, DEMAND_DECISIONS } from "./offer-demand.js";
+
+export { commercialValidationService, prospectingSystem, buildProspectUniverseTemplate, validateCommercialCommitmentTemplate, validateProspect, prospectIdentity, assessCommercialEvidence, compileSalesViews, PROSPECT_QUALIFICATIONS, OPPORTUNITY_STAGES, COMMITMENT_STRENGTH, COMMERCIAL_DECISIONS, GOVERNED_SALES_ACTIONS } from "./commercial-validation.js";
+
+export { mvpReliabilityService, mvpReliabilitySystem, maintainMvpReliabilityTemplate, futurePrimaryGoalInterfaces, observationFingerprint, classifySeverity, automaticRepairEligibility, compileProductLearning, OBSERVATION_TYPES, PRODUCT_DECISIONS, PRIMARY_NEXT_GOALS } from "./mvp-reliability.js";

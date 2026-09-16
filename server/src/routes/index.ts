@@ -13,3 +13,9 @@ export { sidebarBadgeRoutes } from "./sidebar-badges.js";
 export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
+
+export { customerDiscoveryRoutes } from "./customer-discovery.js";
+
+export { marketIntelligenceRoutes } from "./market-intelligence.js";
+
+export { offerDemandRoutes } from "./offer-demand.js";

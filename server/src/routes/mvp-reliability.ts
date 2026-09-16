@@ -1,0 +1,10 @@
+import { Router } from "express";
+import type { Db } from "@paperclipai/db";
+import { mvpReliabilityService } from "../services/mvp-reliability.js";
+import { assertBoard, assertCompanyAccess } from "./authz.js";
+export function mvpReliabilityRoutes(db:Db){const router=Router(),service=mvpReliabilityService(db);
+router.post("/companies/:companyId/mvp-reliability/activate",async(req,res)=>{assertBoard(req);const companyId=req.params.companyId as string;assertCompanyAccess(req,companyId);try{res.status(201).json(await service.activate({...req.body,companyId}))}catch(error){res.status(422).json({error:error instanceof Error?error.message:"Activation failed"})}});
+router.post("/companies/:companyId/deployments",async(req,res)=>{assertBoard(req);const companyId=req.params.companyId as string;assertCompanyAccess(req,companyId);try{res.status(201).json(await service.registerDeployment({...req.body,companyId}))}catch(error){res.status(422).json({error:error instanceof Error?error.message:"Deployment invalid"})}});
+router.post("/companies/:companyId/deployments/:deploymentId/observations",async(req,res)=>{const companyId=req.params.companyId as string;assertCompanyAccess(req,companyId);try{res.status(201).json(await service.observe(companyId,req.params.deploymentId as string,{...req.body,observedAt:new Date(req.body.observedAt)}))}catch(error){res.status(422).json({error:error instanceof Error?error.message:"Observation invalid"})}});
+router.post("/companies/:companyId/observations/:observationId/promote",async(req,res)=>{const companyId=req.params.companyId as string;assertCompanyAccess(req,companyId);res.status(201).json(await service.promote(companyId,req.params.observationId as string,req.body.projectId,req.body.goalId))});
+router.post("/companies/:companyId/observations/:observationId/verify",async(req,res)=>{const companyId=req.params.companyId as string;assertCompanyAccess(req,companyId);res.json(await service.verify(companyId,req.params.observationId as string,req.body))});return router;}

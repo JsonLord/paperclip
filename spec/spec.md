@@ -17,7 +17,7 @@ The system is designed to turn an unproven product idea into an evidence-backed 
 The validation sequence is:
 
 ```text
-Research → Prospects → Conversations → Demand → Commitment → Delivery → Retention → Economics → Build
+Problem → ICP / Market → Offer → Demand → Commercial Commitment → Usage / Value Realization → Retention / Repeat / Renewal / Referral → Economics → Business synthesis / Build-scale decision
 ```
 
 Possible high-level decisions are:
@@ -45,6 +45,12 @@ hypothesis
 ```
 
 Generated analysis is not automatically market evidence.
+
+### Dual-track architecture
+
+FounderOS runs two concurrent tracks. The **primary business evidence track** advances through problem, ICP/market, offer, demand, commercial commitment, usage/value realization, retention, and economics. It does not wait for a mandatory standalone delivery-validation stage when the company already has an MVP. The **parallel product track** observes the existing GitHub MVP deployed to its registered Hugging Face Space, promotes defects and evidence-backed product learning into native Paperclip Issues, uses the existing Jules broker/validation/PR flow for bounded changes, verifies the deployed runtime, and observes again.
+
+GitHub is canonical product source; the HF Space is a runtime environment; Paperclip is the control plane. Routine observation never consumes Jules capacity. Product maintenance blocks business evidence work only when a critical defect invalidates the affected measurement or customer experience.
 
 ---
 

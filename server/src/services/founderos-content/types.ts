@@ -1,0 +1,9 @@
+export type SupportTier="CORE"|"DOMAIN"|"GOAL_SPECIFIC";
+export interface ContentSourceDescriptor {repository:string;ref:string;commit:string;packageRoot:string;registryVersion:string;contentVersion:string}
+export interface GoalTemplate {id:string;version:string;system:string;title:string;objective:string;recommendedOwnerRole:string;requiredSkills:string[];supportPacks:Array<{id:string;version:string;required?:boolean}>;requiredCapabilities:string[];inputPaths:string[];outputPaths:string[];acceptanceCriteria:string[];cannotCompleteIf:string[];writeScope:string[];externalActionPolicy:string;wakeConditions:string[];nextGoalHints:string[];prerequisites:string[];evidenceRequirements:string[];firm?:{required:boolean;buildBefore:boolean;buildAfter:boolean}}
+export interface SystemDefinition {id:string;version:string;title:string;purpose:string;stateDependencies:string[];goals:string[];expectedOutputs:string[];wakeConditions:string[];evidenceFeedbackLoop:string[];stopConditions:string[]}
+export interface SkillDefinition {id:string;version:string;path:string;provenance?:string[]}
+export interface ResourcePackDefinition {id:string;version:string;tier:SupportTier;path:string;requiredSkills:string[];requiredCapabilities:string[];installedFiles:string[];qualityGates:string[];dependencies:string[];compatibility?:string}
+export interface FirmSchemaDefinition {id:string;version:string;path:string}
+export interface FounderOsContentRegistry {registryVersion:string;contentVersion:string;sourceCommit:string;systems:SystemDefinition[];goals:GoalTemplate[];skills:SkillDefinition[];resources:ResourcePackDefinition[];firmSchemas:FirmSchemaDefinition[];migration?:{legacyAdapter:string;managerAdapter:string;executionAdapter:string;provenance:string}}
+export interface ContentReader {descriptor:ContentSourceDescriptor;read(path:string):Promise<string|null>}

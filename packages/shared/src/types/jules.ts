@@ -1,5 +1,10 @@
 export type JulesProfileStatus = "active" | "degraded" | "quota_exhausted" | "auth_required" | "source_access_missing" | "cooldown" | "disabled";
-export type JulesSessionStatus = "queued" | "planning" | "awaiting_plan_approval" | "awaiting_user_feedback" | "in_progress" | "paused" | "failed" | "completed" | "cancelled" | "orphaned";
+export type JulesAdmissionCode = "NO_PROFILE_AVAILABLE" | "QUOTA_EXHAUSTED" | "CONCURRENCY_EXHAUSTED" | "RESERVE_ONLY" | "SOURCE_ACCESS_MISSING" | "CAPABILITY_MISSING" | "PROFILE_DEGRADED" | "WRITE_SCOPE_CONFLICT" | "AUTH_REQUIRED";
+export type JulesSessionStatus =
+  | "DISPATCHING" | "QUEUED" | "PLANNING" | "AWAITING_PLAN_APPROVAL"
+  | "AWAITING_USER_FEEDBACK" | "IN_PROGRESS" | "PAUSED" | "FAILED"
+  | "COMPLETED_UNVALIDATED" | "VALIDATING" | "AWAITING_MANAGER_JUDGMENT"
+  | "REVISION_REQUESTED" | "ACCEPTED" | "ESCALATED" | "ORPHANED";
 
 export interface JulesProfile {
   id: string; name: string; status: JulesProfileStatus; enabled: boolean; plan: string | null;
@@ -12,8 +17,10 @@ export interface CompanyJulesSource {
 }
 export interface JulesSession {
   id: string; companyId: string; profileId: string; companySourceId: string; paperclipRunId: string;
+  agentId: string; goalId: string | null; projectId: string | null; issueId: string | null;
   julesSessionId: string; status: JulesSessionStatus; outcomeId: string | null;
-  lastActivityId: string | null; pullRequestUrl: string | null; completionCandidate: boolean;
+  lastActivityId: string | null; pullRequestUrl: string | null; pullRequestTitle: string | null;
+  pullRequestDescription: string | null; remoteUpdatedAt: string | null; completionCandidate: boolean;
 }
 export type JulesDispatchDecision =
   | { kind: "dispatch"; profileId: string }

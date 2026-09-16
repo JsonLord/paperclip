@@ -1,6 +1,6 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { asBoolean, asNumber, asString, renderTemplate } from "@paperclipai/adapter-utils/server-utils";
-import { JulesApiClient, type JulesRemoteSession } from "./api.js";
+import { extractPullRequest, JulesApiClient, type JulesRemoteSession } from "./api.js";
 import { createJulesSessionSpec, JULES_OUTCOME_TEMPLATES, renderJulesPrompt, type JulesSessionSpec } from "../prompts.js";
 
 const TERMINAL = new Set(["FAILED", "COMPLETED", "CANCELLED"]);
@@ -44,13 +44,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     : generatedSpec
       ? renderJulesPrompt(generatedSpec)
     : renderTemplate(asString(ctx.config.promptTemplate, "Complete the assigned Paperclip outcome. Run: {{runId}}"), { runId: ctx.runId, agentId: ctx.agent.id, companyId: ctx.agent.companyId, context: ctx.context });
+  const configuredSpec = ctx.config.sessionSpec && typeof ctx.config.sessionSpec === "object"
+    ? ctx.config.sessionSpec as Partial<JulesSessionSpec>
+    : generatedSpec;
+  const requirePlanApproval = configuredSpec?.execution?.requirePlanApproval
+    ?? !asBoolean(ctx.config.autoApprovePlan, false);
   await ctx.onMeta?.({ adapterType: "jules", command: "Jules REST API", commandNotes: [`repository=${repository}`, `source=${source}`], prompt });
   const api = new JulesApiClient(baseUrl, apiKey);
   let session: JulesRemoteSession;
   const existingId = asString(ctx.runtime.sessionParams?.julesSessionId, "").trim();
   if (existingId) session = await api.getSession(existingId);
   else {
-    session = await api.createSession({ prompt, source, repository, startingBranch });
+    session = await api.createSession({
+      prompt,
+      source,
+      startingBranch,
+      requirePlanApproval,
+      title: outcomeTemplate?.title ?? (asString(ctx.config.title, "") || undefined),
+    });
     if (!session.id) throw new Error("Jules create-session response did not contain an id");
     await ctx.onMeta?.({ adapterType: "jules", command: "Jules session created", context: { julesSession: { id: session.id, profileId: asString(ctx.config.profileId, ""), companySourceId: asString(ctx.config.companySourceId, ""), repository, source, startingBranch } } });
     await ctx.onLog("stdout", `[jules] created remote session ${session.id}\n`);
@@ -58,18 +69,35 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const pollMs = Math.max(1000, asNumber(ctx.config.pollIntervalSec, 5) * 1000);
   const deadline = Date.now() + Math.max(0, asNumber(ctx.config.maxWaitSec, 30) * 1000);
   while (!TERMINAL.has(stateOf(session)) && Date.now() < deadline) {
-    if (stateOf(session) === "AWAITING_PLAN_APPROVAL" && asBoolean(ctx.config.autoApprovePlan, false)) await api.approvePlan(session.id);
+    if (stateOf(session) === "AWAITING_PLAN_APPROVAL" && asBoolean(ctx.config.autoApprovePlan, false) && !requirePlanApproval) {
+      await api.approvePlan(session.id);
+    }
     await sleep(pollMs);
     session = await api.getSession(session.id);
     await ctx.onLog("stdout", `[jules] ${session.id} ${stateOf(session)}\n`);
   }
   const state = stateOf(session);
   const completed = state === "COMPLETED";
+  const pullRequest = extractPullRequest(session);
+  const activities = await api.listActivities(session.id).catch(() => ({ items: [] }));
+  const lastActivity = activities.items.at(-1);
   return {
     exitCode: state === "FAILED" ? 1 : 0, signal: null, timedOut: false,
     sessionParams: { julesSessionId: session.id, repository, source, startingBranch }, sessionDisplayId: session.id,
     summary: completed ? "Jules completed remote execution; validation is required before acceptance." : `Jules remote session is ${state}.`,
-    resultJson: { julesSessionId: session.id, state, repository, pullRequestUrl: session.pullRequestUrl ?? session.url ?? null, completionCandidate: completed, accepted: false },
+    resultJson: {
+      julesSessionId: session.id,
+      state,
+      repository,
+      pullRequestUrl: pullRequest?.url ?? null,
+      pullRequestTitle: pullRequest?.title ?? null,
+      pullRequestDescription: pullRequest?.description ?? null,
+      lastActivityId: lastActivity?.id ?? lastActivity?.name ?? null,
+      remoteUpdatedAt: session.updateTime ?? null,
+      remoteActive: !TERMINAL.has(state),
+      completionCandidate: completed,
+      accepted: false,
+    },
     errorMessage: state === "FAILED" ? "Jules remote session failed" : null,
   };
 }

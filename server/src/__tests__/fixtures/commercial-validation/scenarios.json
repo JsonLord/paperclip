@@ -1,0 +1,9 @@
+{
+  "A": {"description":"many prospects, no replies","signals":[]},
+  "B": {"description":"few prospects, qualified replies","signals":[{"kind":"REPLY","sourceRef":"email:b1","qualifiedProspect":true},{"kind":"QUALIFIED_CONVERSATION","sourceRef":"call:b2","qualifiedProspect":true}]},
+  "C": {"description":"positive conversation, no commercial next step","signals":[{"kind":"PROBLEM_CONFIRMED","sourceRef":"call:c1","qualifiedProspect":true}]},
+  "D": {"description":"quote requested then rejected on price","signals":[{"kind":"QUOTE_REQUEST","sourceRef":"call:d1","qualifiedProspect":true,"quoteStatus":"REJECTED"}]},
+  "E": {"description":"non-binding LOI","signals":[{"kind":"LOI","sourceRef":"artifact:loi-e","qualifiedProspect":true,"bindingStatus":"NON_BINDING"}]},
+  "F": {"description":"deposit received and paid pilot","signals":[{"kind":"DEPOSIT","sourceRef":"payment:f1","qualifiedProspect":true,"verifiedSystemEventId":"stripe:evt_1"},{"kind":"PAID_PILOT","sourceRef":"payment:f2","qualifiedProspect":true,"verifiedSystemEventId":"stripe:evt_2"}]},
+  "G": {"description":"synthetic prospect and fake interaction","signals":[{"kind":"PAYMENT","sourceRef":"fixture:g1","qualifiedProspect":true,"synthetic":true,"verifiedSystemEventId":"test:1"}]}
+}

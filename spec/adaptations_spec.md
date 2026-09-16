@@ -1939,7 +1939,7 @@ It is complete when this scenario works without manual glue:
 
 13. The company can remain WAITING_FOR_MARKET without burning Jules quota.
 
-14. The validation sequence advances through research, prospects, conversations, demand, commitment, delivery, retention and economics.
+14. The primary evidence sequence advances through problem, ICP/market, offer, demand, commercial commitment, usage/value realization, retention and economics while MVP reliability runs concurrently as a non-blocking product-observation loop.
 
 15. Business Second Brain and Sales Second Brain remain reconstructible from GitHub/Firm rather than model memory.
 
@@ -3290,3 +3290,8 @@ Minimum acceptance scenarios:
 UI acceptance criterion:
 
 > An operator can open Paperclip and understand the company's vision, goals, projects, roles/agents, current execution issues, approvals and major outputs using the native Paperclip UI. FounderOS-specific metadata enriches those entities; it does not bypass them.
+
+
+# 48. Dual-track MVP reliability and product learning
+
+FounderOS companies begin with an existing GitHub MVP and registered Hugging Face Space. The primary business sequence after commercial commitment is usage/value realization, retention and economics; concierge or pilot delivery facts may be recorded but a standalone delivery-validation Goal is not mandatory. In parallel, `mvp-reliability` observes registered runtime health without Jules, deduplicates fingerprints, promotes actionable failures or evidence-backed learning to native Issues, dispatches bounded work only through the existing capacity broker and write leases, applies deterministic validation and managerial judgment, and requires deployment verification before resolving the Issue. GitHub remains source; the Space remains runtime. Speculative feature requests do not authorize implementation.

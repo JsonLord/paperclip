@@ -1,0 +1,3 @@
+export interface FirmValidationAdapter { validate(input: { repository: string; commitSha: string; expectedEntityIds?: string[] }): Promise<{ workspaceRepository: string; buildPassed: boolean; foundEntityIds: string[]; diagnostics: string[] }> }
+/** Firm validation is deliberately injected so validation can only target the bound company workspace. */
+export async function validateFirmWorkspace(adapter: FirmValidationAdapter, repository: string, commitSha: string, expectedEntityIds: string[] = []) { const result = await adapter.validate({ repository, commitSha, expectedEntityIds }); if (result.workspaceRepository !== repository) throw new Error("Firm validator returned a non-company workspace"); return result; }

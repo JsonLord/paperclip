@@ -37,4 +37,8 @@ export interface GoalSupportResolution {
   cannotCompleteIf: string[];
   packs: ResolvedGoalSupportPack[];
   missingRequiredPacks: string[];
+  templateProvenance?: { templateId: string; templateVersion: string; systemId: string; sourceRepository: string; sourceCommit: string };
+  writeScope?: string[];
+  externalActionPolicy?: string;
+  firm?: { required: boolean; buildBefore: boolean; buildAfter: boolean };
 }

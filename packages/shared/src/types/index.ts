@@ -1,6 +1,6 @@
 export type { Company } from "./company.js";
 export type { FirmSnapshot } from "./firm.js";
-export type { JulesProfile, JulesProfileStatus, CompanyJulesSource, JulesSession, JulesSessionStatus, JulesDispatchDecision } from "./jules.js";
+export type { JulesProfile, JulesProfileStatus, JulesAdmissionCode, CompanyJulesSource, JulesSession, JulesSessionStatus, JulesDispatchDecision } from "./jules.js";
 export type { ResourcePackTier, ResourcePackFile, ResourcePackManifest, ResourcePackSnapshot, ResolvedGoalSupportPack, GoalSupportResolution } from "./resource-pack.js";
 export type { InstanceExperimentalSettings, InstanceSettings } from "./instance.js";
 export type {

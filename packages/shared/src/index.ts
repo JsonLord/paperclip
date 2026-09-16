@@ -246,6 +246,7 @@ export type {
   ProviderQuotaResult,
   JulesProfile,
   JulesProfileStatus,
+  JulesAdmissionCode,
   CompanyJulesSource,
   JulesSession,
   JulesSessionStatus,

@@ -1,0 +1,630 @@
+{
+  "registryVersion": "1.0.0",
+  "contentVersion": "1.0.0",
+  "sourceCommit": "0123456789abcdef",
+  "systems": [
+    {
+      "id": "venture-intelligence",
+      "version": "1.0.0",
+      "title": "Venture Intelligence",
+      "purpose": "Venture Intelligence operating loop",
+      "stateDependencies": [],
+      "goals": [
+        "assess-venture-thesis"
+      ],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "market-intelligence",
+      "version": "1.0.0",
+      "title": "Market Intelligence",
+      "purpose": "Market Intelligence operating loop",
+      "stateDependencies": [],
+      "goals": [
+        "analyze-market",
+        "define-initial-icp"
+      ],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "customer-discovery",
+      "version": "1.0.0",
+      "title": "Customer Discovery",
+      "purpose": "Customer Discovery operating loop",
+      "stateDependencies": [],
+      "goals": [
+        "validate-problem"
+      ],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "offer-engine",
+      "version": "1.0.0",
+      "title": "Offer Engine",
+      "purpose": "Offer Engine operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "business-model-engine",
+      "version": "1.0.0",
+      "title": "Business Model Engine",
+      "purpose": "Business Model Engine operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "prospecting",
+      "version": "1.0.0",
+      "title": "Prospecting",
+      "purpose": "Prospecting operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "sales-second-brain",
+      "version": "1.0.0",
+      "title": "Sales Second Brain",
+      "purpose": "Sales Second Brain operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "fake-door-validation",
+      "version": "1.0.0",
+      "title": "Fake-Door Validation",
+      "purpose": "Fake-Door Validation operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "content-distribution",
+      "version": "1.0.0",
+      "title": "Content & Distribution",
+      "purpose": "Content & Distribution operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "campaign-management",
+      "version": "1.0.0",
+      "title": "Campaign Management",
+      "purpose": "Campaign Management operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "search-demand",
+      "version": "1.0.0",
+      "title": "Search Demand",
+      "purpose": "Search Demand operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "financial-case",
+      "version": "1.0.0",
+      "title": "Financial Case",
+      "purpose": "Financial Case operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "business-planning",
+      "version": "1.0.0",
+      "title": "Business Planning",
+      "purpose": "Business Planning operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "pitch",
+      "version": "1.0.0",
+      "title": "Pitch",
+      "purpose": "Pitch operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    },
+    {
+      "id": "red-team",
+      "version": "1.0.0",
+      "title": "Red Team",
+      "purpose": "Red Team operating loop",
+      "stateDependencies": [],
+      "goals": [],
+      "expectedOutputs": [],
+      "wakeConditions": [],
+      "evidenceFeedbackLoop": [
+        "Observed evidence updates native goals"
+      ],
+      "stopConditions": [
+        "Acceptance or explicit stop gate"
+      ]
+    }
+  ],
+  "goals": [
+    {
+      "id": "assess-venture-thesis",
+      "version": "1.0.0",
+      "system": "venture-intelligence",
+      "title": "Assess venture thesis",
+      "objective": "Assess venture thesis",
+      "recommendedOwnerRole": "evidence",
+      "requiredSkills": [
+        "evidence-discipline"
+      ],
+      "supportPacks": [
+        {
+          "id": "core.evidence-discipline",
+          "version": "1.0.0",
+          "required": true
+        },
+        {
+          "id": "validation.venture-thesis",
+          "version": "1.0.0",
+          "required": true
+        }
+      ],
+      "requiredCapabilities": [
+        "firm",
+        "context7"
+      ],
+      "inputPaths": [
+        "company/OVERVIEW.md"
+      ],
+      "outputPaths": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "acceptanceCriteria": [
+        "Claims are sourced or explicitly classified as hypotheses"
+      ],
+      "cannotCompleteIf": [
+        "Required evidence provenance is missing",
+        "Firm build fails"
+      ],
+      "writeScope": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "externalActionPolicy": "APPROVAL_REQUIRED",
+      "wakeConditions": [],
+      "nextGoalHints": [],
+      "prerequisites": [],
+      "evidenceRequirements": [
+        "source IDs for factual and quantitative claims"
+      ],
+      "firm": {
+        "required": true,
+        "buildBefore": true,
+        "buildAfter": true
+      }
+    },
+    {
+      "id": "analyze-market",
+      "version": "1.0.0",
+      "system": "market-intelligence",
+      "title": "Analyze market",
+      "objective": "Analyze market",
+      "recommendedOwnerRole": "market",
+      "requiredSkills": [
+        "evidence-discipline",
+        "market-analysis"
+      ],
+      "supportPacks": [
+        {
+          "id": "core.evidence-discipline",
+          "version": "1.0.0",
+          "required": true
+        },
+        {
+          "id": "market-analysis.core",
+          "version": "1.0.0",
+          "required": true
+        }
+      ],
+      "requiredCapabilities": [
+        "firm",
+        "context7"
+      ],
+      "inputPaths": [
+        "company/OVERVIEW.md"
+      ],
+      "outputPaths": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "acceptanceCriteria": [
+        "Claims are sourced or explicitly classified as hypotheses"
+      ],
+      "cannotCompleteIf": [
+        "Required evidence provenance is missing",
+        "Firm build fails"
+      ],
+      "writeScope": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "externalActionPolicy": "APPROVAL_REQUIRED",
+      "wakeConditions": [],
+      "nextGoalHints": [],
+      "prerequisites": [],
+      "evidenceRequirements": [
+        "source IDs for factual and quantitative claims"
+      ],
+      "firm": {
+        "required": true,
+        "buildBefore": true,
+        "buildAfter": true
+      }
+    },
+    {
+      "id": "validate-problem",
+      "version": "1.0.0",
+      "system": "customer-discovery",
+      "title": "Validate problem",
+      "objective": "Validate problem",
+      "recommendedOwnerRole": "customer",
+      "requiredSkills": [
+        "evidence-discipline",
+        "customer-discovery-methods"
+      ],
+      "supportPacks": [
+        {
+          "id": "core.evidence-discipline",
+          "version": "1.0.0",
+          "required": true
+        },
+        {
+          "id": "customer-discovery.core",
+          "version": "1.0.0",
+          "required": true
+        }
+      ],
+      "requiredCapabilities": [
+        "firm",
+        "context7"
+      ],
+      "inputPaths": [
+        "company/OVERVIEW.md"
+      ],
+      "outputPaths": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "acceptanceCriteria": [
+        "Claims are sourced or explicitly classified as hypotheses"
+      ],
+      "cannotCompleteIf": [
+        "Required evidence provenance is missing",
+        "Firm build fails"
+      ],
+      "writeScope": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "externalActionPolicy": "APPROVAL_REQUIRED",
+      "wakeConditions": [],
+      "nextGoalHints": [],
+      "prerequisites": [],
+      "evidenceRequirements": [
+        "source IDs for factual and quantitative claims"
+      ],
+      "firm": {
+        "required": true,
+        "buildBefore": true,
+        "buildAfter": true
+      }
+    },
+    {
+      "id": "define-initial-icp",
+      "version": "1.0.0",
+      "system": "market-intelligence",
+      "title": "Define initial ICP",
+      "objective": "Define initial ICP",
+      "recommendedOwnerRole": "market",
+      "requiredSkills": [
+        "evidence-discipline",
+        "market-analysis"
+      ],
+      "supportPacks": [
+        {
+          "id": "core.evidence-discipline",
+          "version": "1.0.0",
+          "required": true
+        },
+        {
+          "id": "market-analysis.core",
+          "version": "1.0.0",
+          "required": true
+        }
+      ],
+      "requiredCapabilities": [
+        "firm",
+        "context7"
+      ],
+      "inputPaths": [
+        "company/OVERVIEW.md"
+      ],
+      "outputPaths": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "acceptanceCriteria": [
+        "Claims are sourced or explicitly classified as hypotheses"
+      ],
+      "cannotCompleteIf": [
+        "Required evidence provenance is missing",
+        "Firm build fails"
+      ],
+      "writeScope": [
+        "business-case/**",
+        "evidence/**",
+        "firm/**"
+      ],
+      "externalActionPolicy": "APPROVAL_REQUIRED",
+      "wakeConditions": [],
+      "nextGoalHints": [],
+      "prerequisites": [],
+      "evidenceRequirements": [
+        "source IDs for factual and quantitative claims"
+      ],
+      "firm": {
+        "required": true,
+        "buildBefore": true,
+        "buildAfter": true
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "evidence-discipline",
+      "version": "1.0.0",
+      "path": "skills/evidence-discipline/SKILL.md",
+      "provenance": [
+        "FounderOS-DEMO PR #4"
+      ]
+    },
+    {
+      "id": "market-analysis",
+      "version": "1.0.0",
+      "path": "skills/market-analysis/SKILL.md",
+      "provenance": [
+        "FounderOS-DEMO PR #4"
+      ]
+    },
+    {
+      "id": "customer-discovery-methods",
+      "version": "1.0.0",
+      "path": "skills/customer-discovery-methods/SKILL.md",
+      "provenance": [
+        "FounderOS-DEMO PR #4"
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "id": "core.evidence-discipline",
+      "version": "1.0.0",
+      "tier": "CORE",
+      "path": "resources/core-evidence",
+      "requiredSkills": [
+        "evidence-discipline"
+      ],
+      "requiredCapabilities": [
+        "firm"
+      ],
+      "installedFiles": [
+        "RESOURCE.md",
+        "quality-gate.md"
+      ],
+      "qualityGates": [
+        "No generated text is customer or market evidence",
+        "Quantitative claims require source IDs"
+      ],
+      "dependencies": [],
+      "compatibility": "founderos-context/v1"
+    },
+    {
+      "id": "validation.venture-thesis",
+      "version": "1.0.0",
+      "tier": "GOAL_SPECIFIC",
+      "path": "resources/venture-thesis",
+      "requiredSkills": [
+        "evidence-discipline"
+      ],
+      "requiredCapabilities": [
+        "firm"
+      ],
+      "installedFiles": [
+        "RESOURCE.md",
+        "quality-gate.md"
+      ],
+      "qualityGates": [
+        "No generated text is customer or market evidence",
+        "Quantitative claims require source IDs"
+      ],
+      "dependencies": [
+        "core.evidence-discipline"
+      ],
+      "compatibility": "founderos-context/v1"
+    },
+    {
+      "id": "market-analysis.core",
+      "version": "1.0.0",
+      "tier": "DOMAIN",
+      "path": "resources/market-core",
+      "requiredSkills": [
+        "market-analysis"
+      ],
+      "requiredCapabilities": [
+        "firm"
+      ],
+      "installedFiles": [
+        "RESOURCE.md",
+        "quality-gate.md"
+      ],
+      "qualityGates": [
+        "No generated text is customer or market evidence",
+        "Quantitative claims require source IDs"
+      ],
+      "dependencies": [
+        "core.evidence-discipline"
+      ],
+      "compatibility": "founderos-context/v1"
+    },
+    {
+      "id": "customer-discovery.core",
+      "version": "1.0.0",
+      "tier": "DOMAIN",
+      "path": "resources/customer-core",
+      "requiredSkills": [
+        "customer-discovery-methods"
+      ],
+      "requiredCapabilities": [
+        "firm"
+      ],
+      "installedFiles": [
+        "RESOURCE.md",
+        "quality-gate.md"
+      ],
+      "qualityGates": [
+        "No generated text is customer or market evidence",
+        "Quantitative claims require source IDs"
+      ],
+      "dependencies": [
+        "core.evidence-discipline"
+      ],
+      "compatibility": "founderos-context/v1"
+    }
+  ],
+  "firmSchemas": [
+    {
+      "id": "core",
+      "version": "1.0.0",
+      "path": "firm/schemas/core.firm"
+    }
+  ],
+  "migration": {
+    "legacyAdapter": "claude_local",
+    "managerAdapter": "hermes_local",
+    "executionAdapter": "jules",
+    "provenance": "FounderOS-DEMO PR #4 validation-skills-from-agent-questions"
+  }
+}
