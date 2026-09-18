@@ -1,0 +1,14 @@
+[
+ {"id":"A","description":"real revenue and complete direct costs","expected":"CONTRIBUTION"},
+ {"id":"B","description":"revenue but compute cost missing","expected":"INCOMPLETE"},
+ {"id":"C","description":"paid acquisition and ten customers","expected":"CAC"},
+ {"id":"D","description":"spend without customer denominator","expected":"CAC_UNKNOWN"},
+ {"id":"E","description":"observed revenue with immature retention","expected":"OBSERVED_LTV_ONLY"},
+ {"id":"F","description":"guessed retention","expected":"NO_OBSERVED_LTV"},
+ {"id":"G","description":"known CAC and periodic contribution","expected":"PAYBACK"},
+ {"id":"H","description":"unknown CAC","expected":"PAYBACK_UNKNOWN"},
+ {"id":"I","description":"support cost destroys contribution","expected":"NEGATIVE_CONTRIBUTION"},
+ {"id":"J","description":"positive contribution with fixed costs","expected":"BREAK_EVEN_VOLUME"},
+ {"id":"K","description":"explicit scenario ranges","expected":"SENSITIVITY"},
+ {"id":"L","description":"arbitrary unsourced values","expected":"REJECTED"}
+]

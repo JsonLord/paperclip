@@ -63,3 +63,10 @@ export { offerHypotheses, demandExperiments, demandEvents } from "./offer_demand
 export { salesProspects, salesInteractions, commercialCommitments, salesQuotes } from "./commercial_validation.js";
 
 export { companyDeployments, runtimeObservations } from "./mvp_reliability.js";
+export { productUsageEvents, activationDefinitions, valueHypotheses, customerOutcomes, retentionWindows, retentionEvents, customerCostObservations } from "./customer_value.js";
+export { unitEconomicModels, economicInputs, financialAssumptions, economicScenarios } from "./unit_economics.js";
+export { businessModelCanvases } from "./business_model.js";
+export { financialPlans, forecastAssumptions } from "./financial_planning.js";
+export { businessPlans } from "./business_plan.js";
+export { pitchDecks } from "./pitch.js";
+export { publishingAccounts, contentCandidates, socialPublications, contentStrategies, gtmCampaigns, contentAtoms, campaignEvents } from "./content_publishing.js";

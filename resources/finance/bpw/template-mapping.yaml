@@ -1,0 +1,5 @@
+resourcePackId: bpw.finance
+workbookVersion: UNAVAILABLE
+sheets: []
+status: NOT_RENDERED
+reason: Canonical BPW workbook source is not available in this repository; do not guess cells or convert legacy XLS unsafely.

@@ -1,0 +1,3 @@
+required: [assetId, deploymentId, revision, capturedAt, route, status]
+statuses: [LIVE_PRODUCT, PROTOTYPE, MOCKUP, CONCEPT]
+rule: Mockups and concepts must never be presented as live product.

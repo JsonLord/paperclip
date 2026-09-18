@@ -1,0 +1,5 @@
+id: bpw.business-plan
+version: 1.0.0
+canonicalCompatibility: bpw-business-plan
+sourceTemplateStatus: unavailable
+files: [RESOURCE.md, chapter-contract.yaml, required-evidence.yaml, evaluation-rubric.md, sustainability-guide.md, layout.md]

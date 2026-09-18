@@ -1,0 +1,10 @@
+chapters:
+  - executive-summary
+  - product-service
+  - founding-team
+  - market-analysis
+  - marketing-go-to-market
+  - company-organisation
+  - financial-planning
+  - sustainability
+invariants: [executive-summary-last, claims-traceable, unknowns-preserved, financial-model-authoritative]

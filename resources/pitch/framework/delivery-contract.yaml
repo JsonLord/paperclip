@@ -1,0 +1,3 @@
+required: [opening, closing, slideTimeBudgetSeconds, keyEmphasis, anticipatedQuestions]
+optional: [totalPitchDurationMinutes]
+rule: Duration is configurable unless an authoritative format specifies it.

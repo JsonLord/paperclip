@@ -1,0 +1,5 @@
+id: bpw.finance
+version: 1.0.0
+canonicalCompatibility: bpw-financial-planning
+workbookTemplateStatus: unavailable
+files: [RESOURCE.md, financial-domain-contract.yaml, template-mapping.yaml, quality-gate.md]

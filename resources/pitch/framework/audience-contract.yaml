@@ -1,0 +1,3 @@
+audiences: [BPW_JURY, INVESTOR, STRATEGIC_PARTNER, CUSTOMER, INTERNAL_REVIEW, OTHER]
+principle: Audience changes selection, ordering, explanation, and density; never factual truth.
+required: [decision, knowledgeLevel, mainConcerns, requiredTopics, evidenceExpectations, finalAsk]

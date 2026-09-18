@@ -1,0 +1,14 @@
+[
+ {"id":"A","description":"observed price and explicit growth forecast revenue"},
+ {"id":"B","description":"missing customer growth leaves revenue incomplete"},
+ {"id":"C","description":"revenue and variable cost scale together"},
+ {"id":"D","description":"payment delay creates cash deficit despite P&L"},
+ {"id":"E","description":"hypothetical funding excluded from cash"},
+ {"id":"F","description":"forecast exceeds reachable market"},
+ {"id":"G","description":"forecast exceeds support capacity"},
+ {"id":"H","description":"three scenarios propagate consistently"},
+ {"id":"I","description":"unknown opening cash constrains capital requirement"},
+ {"id":"J","description":"salary and tax are not fabricated"},
+ {"id":"K","description":"rendered workbook reconciles to canonical model"},
+ {"id":"L","description":"unavailable template yields NOT_RENDERED"}
+]

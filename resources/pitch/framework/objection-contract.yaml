@@ -1,0 +1,2 @@
+required: [objectionId, question, affectedSlides, evidenceIds, resolutionStatus, remainingWeakness, followupGoal]
+statuses: [RESOLVED, PARTIAL, OPEN]

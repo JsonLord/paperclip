@@ -1,0 +1,12 @@
+[
+  {"id":"A","description":"paid but never uses MVP","events":[],"expectedUsage":false},
+  {"id":"B","description":"signs in but never completes core workflow","events":["SIGNED_IN"],"expectedUsage":false},
+  {"id":"C","description":"completes workflow once without return","events":["CORE_WORKFLOW_COMPLETED","OUTPUT_VIEWED"],"expectedUsage":true,"expectedRetention":false},
+  {"id":"D","description":"realizes value and returns repeatedly","events":["CORE_WORKFLOW_COMPLETED","OUTPUT_VIEWED","RETURN_SESSION"],"expectedUsage":true,"expectedValue":true,"expectedRetention":true},
+  {"id":"E","description":"renewal paid","retention":{"type":"RENEWAL","stage":"PAID"},"expectedRetention":true},
+  {"id":"F","description":"actual referral","retention":{"type":"REFERRAL","referredAccountRef":"account-2"},"expectedRetention":true},
+  {"id":"G","description":"churns due to runtime defect","retention":{"type":"CHURN","churnReason":"PRODUCT_FAILURE"}},
+  {"id":"H","description":"churns due to price","retention":{"type":"CHURN","churnReason":"PRICE"}},
+  {"id":"I","description":"only TEST and SYNTHETIC events","environments":["TEST","SYNTHETIC"],"expectedUsage":false},
+  {"id":"J","description":"support costs exceed received revenue","receivedMinor":1000,"costMinor":2500,"expectedContributionMinor":-1500}
+]

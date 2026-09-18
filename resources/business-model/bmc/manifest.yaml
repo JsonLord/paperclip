@@ -1,0 +1,10 @@
+id: bmc.standard
+version: 1.0.0
+canonicalCompatibility: bpw-business-model-canvas
+files:
+  - RESOURCE.md
+  - canvas-contract.yaml
+  - block-guidance.md
+  - evidence-map.md
+  - layout.md
+  - quality-gate.md

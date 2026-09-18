@@ -1,0 +1,4 @@
+id: pitch.framework
+version: 1.0.0
+scope: reusable-story-method
+files: [RESOURCE.md, story-contract.yaml, claim-contract.yaml, audience-contract.yaml, objection-contract.yaml, slide-purpose-contract.yaml, delivery-contract.yaml, visual-principles.md, quality-gate.md]

@@ -1,0 +1,5 @@
+id: pitch.bpw-10-step
+version: 1.0.0
+canonicalCompatibility: bpw-pitch-deck-10-step
+officialTemplateStatus: unavailable
+files: [RESOURCE.md, slide-contract.yaml, layout.md, evidence-map.md, quality-gate.md]
