@@ -1,0 +1,4 @@
+version: 1
+valueClasses: [OBSERVED, CALCULATED, FORECAST]
+outputs: [FINANCIAL_PLAN.yaml, PROFIT_AND_LOSS.yaml, CASH_FLOW.yaml, CAPITAL_REQUIREMENT.yaml, FINANCIAL_ASSUMPTIONS.yaml, FINANCIAL_PLAN.md, FINANCIAL_RISKS.md]
+requiredModels: [forecastHorizon, revenueDrivers, variableCosts, staffing, operatingExpenses, profitAndLoss, cashFlow, capitalRequirement, scenarios, sensitivity]

@@ -1,0 +1,2 @@
+required: [slideId, audienceQuestion, primaryClaimId, supportingClaimIds, objectionIds, takeaway, recommendedVisual, speakerNotePurpose]
+rule: Every slide has one dominant takeaway and a narrative role.

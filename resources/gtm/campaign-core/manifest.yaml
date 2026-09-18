@@ -1,0 +1,3 @@
+id: gtm.campaign-core
+version: 1.0.0
+requires: [objective, audience, message-hypothesis, channel, thresholds, stop-rules, approval, measurement]

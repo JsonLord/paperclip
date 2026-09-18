@@ -1,0 +1,14 @@
+version: 1
+blocks:
+  - customerSegments
+  - valuePropositions
+  - channels
+  - customerRelationships
+  - revenueStreams
+  - keyResources
+  - keyActivities
+  - keyPartners
+  - costStructure
+entryRequiredFields: [statement, status, confidence, evidenceIds, assumptionIds, contradictionIds, sourceArtifacts]
+statuses: [VALIDATED, SUPPORTED, EARLY_EVIDENCE, HYPOTHESIS, ASSUMPTION, UNKNOWN, CONTRADICTED]
+confidence: [LOW, MEDIUM, HIGH]

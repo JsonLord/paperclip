@@ -1,0 +1,6 @@
+id: content.linkedin
+version: 1.0.0
+publisher: POSTIO
+platform: LINKEDIN
+objectives: [PROBLEM_AWARENESS, PRODUCT_EDUCATION, PROTOTYPE_DISCOVERY, QUALIFIED_FEEDBACK, DEMAND_GENERATION]
+files: [RESOURCE.md, story-contract.yaml, claim-gate.md, media-contract.yaml, quality-gate.md]

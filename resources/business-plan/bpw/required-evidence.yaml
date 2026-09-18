@@ -1,0 +1,5 @@
+requirements:
+  materialStatement: [evidenceIds, calculationIds, assumptionIds]
+  financialStatement: [canonicalFinancialMetric]
+  executiveSummary: [substantiveChapterClaim]
+  privateCustomerData: [explicitDisclosureAuthorization]

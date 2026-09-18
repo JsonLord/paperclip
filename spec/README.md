@@ -25,3 +25,19 @@ These documents are companions and should be read together. `spec.md` defines th
 - [Prospecting & commercial commitment review (2026-09-15)](reviews/2026-09-15-prospecting-commercial-validation-review.md)
 
 - [MVP reliability & product learning review (2026-09-16)](reviews/2026-09-16-mvp-reliability-product-learning-review.md)
+
+- [Usage, value realization & retention review (2026-09-16)](reviews/2026-09-16-usage-value-retention-review.md)
+
+- [Unit economics & financial case review (2026-09-17)](reviews/2026-09-17-unit-economics-financial-case-review.md)
+
+- [Evidence-backed Business Model Canvas review (2026-09-17)](reviews/2026-09-17-business-model-canvas-review.md)
+
+- [BPW Financial Planning review (2026-09-17)](reviews/2026-09-17-bpw-financial-planning-review.md)
+
+- [BPW Business Plan compiler review (2026-09-18)](reviews/2026-09-18-bpw-business-plan-review.md)
+
+- [BPW 10-Step Pitch compiler review (2026-09-18)](reviews/2026-09-18-bpw-pitch-review.md)
+
+- [Content / GTM and Postio review (2026-09-18)](reviews/2026-09-18-content-gtm-postio-review.md)
+
+- [Content & Distribution / GTM runtime review (2026-09-18)](reviews/2026-09-18-content-distribution-gtm-review.md)
