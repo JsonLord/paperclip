@@ -41,3 +41,5 @@ These documents are companions and should be read together. `spec.md` defines th
 - [Content / GTM and Postio review (2026-09-18)](reviews/2026-09-18-content-gtm-postio-review.md)
 
 - [Content & Distribution / GTM runtime review (2026-09-18)](reviews/2026-09-18-content-distribution-gtm-review.md)
+
+- [Kickstarter / Crowdfunding review (2026-09-18)](reviews/2026-09-18-kickstarter-crowdfunding-review.md)
