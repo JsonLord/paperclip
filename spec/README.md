@@ -43,3 +43,5 @@ These documents are companions and should be read together. `spec.md` defines th
 - [Content & Distribution / GTM runtime review (2026-09-18)](reviews/2026-09-18-content-distribution-gtm-review.md)
 
 - [Kickstarter / Crowdfunding review (2026-09-18)](reviews/2026-09-18-kickstarter-crowdfunding-review.md)
+
+- [FounderOS deployment readiness review (2026-09-19)](reviews/2026-09-19-founderos-deployment-readiness-review.md)
