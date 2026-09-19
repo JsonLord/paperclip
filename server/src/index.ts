@@ -1,4 +1,5 @@
 /// <reference path="./types/express.d.ts" />
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
@@ -20,7 +21,9 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
+  invites,
 } from "@paperclipai/db";
+import { count, isNull, gt } from "drizzle-orm";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -470,6 +473,47 @@ export async function startServer(): Promise<StartedServer> {
     await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
     authReady = true;
   }
+
+  async function ensureBootstrapCeoInvite(database: any): Promise<string | null> {
+    if (config.deploymentMode !== "authenticated") return null;
+    const adminCount = await database
+      .select({ count: count() })
+      .from(instanceUserRoles)
+      .where(eq(instanceUserRoles.role, "instance_admin"))
+      .then((rows: Array<{ count: number }>) => Number(rows[0]?.count ?? 0));
+
+    if (adminCount > 0) return null;
+
+    const now = new Date();
+    const activeCount = await database
+      .select({ count: count() })
+      .from(invites)
+      .where(
+        and(
+          eq(invites.inviteType, "bootstrap_ceo"),
+          isNull(invites.revokedAt),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, now),
+        ),
+      )
+      .then((rows: Array<{ count: number }>) => Number(rows[0]?.count ?? 0));
+
+    if (activeCount > 0) return null;
+
+    const rawToken = `pcp_bootstrap_${randomBytes(24).toString("hex")}`;
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+
+    await database.insert(invites).values({
+      inviteType: "bootstrap_ceo",
+      tokenHash,
+      allowedJoinTypes: "human",
+      expiresAt,
+      invitedByUserId: "system",
+    });
+
+    return rawToken;
+  }
   
   const listenPort = await detectPort(config.port);
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
@@ -644,6 +688,18 @@ export async function startServer(): Promise<StartedServer> {
         databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
         databaseBackupRetentionDays: config.databaseBackupRetentionDays,
         databaseBackupDir: config.databaseBackupDir,
+      });
+
+      void ensureBootstrapCeoInvite(db as any).then((token) => {
+        if (token) {
+          const yellow = "\x1b[33m";
+          const reset = "\x1b[0m";
+          const inviteUrl = `http://${runtimeApiHost}:${listenPort}/invite/${token}`;
+          logger.info({ inviteUrl }, "Auto-generated initial bootstrap CEO invite URL");
+          console.log(`${yellow}BOOTSTRAP CEO INVITE: ${inviteUrl}${reset}`);
+        }
+      }).catch((err) => {
+        logger.error({ err }, "Failed to auto-generate bootstrap CEO invite");
       });
 
       const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
