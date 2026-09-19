@@ -1,3 +1,9 @@
+---
+title: Founder
+sdk: docker
+app_port: 7860
+---
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>

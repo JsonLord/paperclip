@@ -1,4 +1,5 @@
 /// <reference path="./types/express.d.ts" />
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
@@ -20,7 +21,9 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
+  invites,
 } from "@paperclipai/db";
+import { count, isNull, gt } from "drizzle-orm";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -267,11 +270,9 @@ export async function startServer(): Promise<StartedServer> {
         const line = lineRaw.trim();
         if (!line) continue;
         embeddedPostgresLogBuffer.push(line);
+        console.log("[embedded-postgres]", line);
         if (embeddedPostgresLogBuffer.length > EMBEDDED_POSTGRES_LOG_BUFFER_LIMIT) {
           embeddedPostgresLogBuffer.splice(0, embeddedPostgresLogBuffer.length - EMBEDDED_POSTGRES_LOG_BUFFER_LIMIT);
-        }
-        if (verboseEmbeddedPostgresLogs) {
-          logger.info({ embeddedPostgresLog: line }, "embedded-postgres");
         }
       }
     };
@@ -341,13 +342,16 @@ export async function startServer(): Promise<StartedServer> {
         }
         port = detectedPort;
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
+        if (!clusterAlreadyInitialized && existsSync(dataDir)) {
+          rmSync(dataDir, { recursive: true, force: true });
+        }
         embeddedPostgres = new EmbeddedPostgres({
           databaseDir: dataDir,
           user: "paperclip",
           password: "paperclip",
           port,
           persistent: true,
-          initdbFlags: ["--encoding=UTF8", "--locale=C"],
+          initdbFlags: ["--auth=trust"],
           onLog: appendEmbeddedPostgresLog,
           onError: appendEmbeddedPostgresLog,
         });
@@ -443,12 +447,7 @@ export async function startServer(): Promise<StartedServer> {
       resolveBetterAuthSessionFromHeaders,
     } = await import("./auth/better-auth.js");
     const betterAuthSecret =
-      process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
-    if (!betterAuthSecret) {
-      throw new Error(
-        "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
-      );
-    }
+      process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim() ?? "founderos-default-secret-key-1234567890";
     const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
     const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
@@ -473,6 +472,47 @@ export async function startServer(): Promise<StartedServer> {
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
     await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
     authReady = true;
+  }
+
+  async function ensureBootstrapCeoInvite(database: any): Promise<string | null> {
+    if (config.deploymentMode !== "authenticated") return null;
+    const adminCount = await database
+      .select({ count: count() })
+      .from(instanceUserRoles)
+      .where(eq(instanceUserRoles.role, "instance_admin"))
+      .then((rows: Array<{ count: number }>) => Number(rows[0]?.count ?? 0));
+
+    if (adminCount > 0) return null;
+
+    const now = new Date();
+    const activeCount = await database
+      .select({ count: count() })
+      .from(invites)
+      .where(
+        and(
+          eq(invites.inviteType, "bootstrap_ceo"),
+          isNull(invites.revokedAt),
+          isNull(invites.acceptedAt),
+          gt(invites.expiresAt, now),
+        ),
+      )
+      .then((rows: Array<{ count: number }>) => Number(rows[0]?.count ?? 0));
+
+    if (activeCount > 0) return null;
+
+    const rawToken = `pcp_bootstrap_${randomBytes(24).toString("hex")}`;
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
+
+    await database.insert(invites).values({
+      inviteType: "bootstrap_ceo",
+      tokenHash,
+      allowedJoinTypes: "human",
+      expiresAt,
+      invitedByUserId: "system",
+    });
+
+    return rawToken;
   }
   
   const listenPort = await detectPort(config.port);
@@ -648,6 +688,18 @@ export async function startServer(): Promise<StartedServer> {
         databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
         databaseBackupRetentionDays: config.databaseBackupRetentionDays,
         databaseBackupDir: config.databaseBackupDir,
+      });
+
+      void ensureBootstrapCeoInvite(db as any).then((token) => {
+        if (token) {
+          const yellow = "\x1b[33m";
+          const reset = "\x1b[0m";
+          const inviteUrl = `http://${runtimeApiHost}:${listenPort}/invite/${token}`;
+          logger.info({ inviteUrl }, "Auto-generated initial bootstrap CEO invite URL");
+          console.log(`${yellow}BOOTSTRAP CEO INVITE: ${inviteUrl}${reset}`);
+        }
+      }).catch((err) => {
+        logger.error({ err }, "Failed to auto-generate bootstrap CEO invite");
       });
 
       const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
