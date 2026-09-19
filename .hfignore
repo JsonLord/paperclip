@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+data/pglite
+*.log
+.env
+.env.local
+.cache
+pnpm-debug.log

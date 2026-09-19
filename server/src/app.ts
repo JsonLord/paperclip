@@ -10,6 +10,7 @@ import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
 import { healthRoutes } from "./routes/health.js";
+import { apiDocsRoutes } from "./routes/api-docs.js";
 import { companyRoutes } from "./routes/companies.js";
 import { firmRoutes } from "./routes/firm.js";
 import { julesRoutes } from "./routes/jules.js";
@@ -139,6 +140,20 @@ export async function createApp(
     app.all("/api/auth/*authPath", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
+
+  // Top-level mandatory health and api-docs endpoints
+  const healthHandler = healthRoutes(db, {
+    deploymentMode: opts.deploymentMode,
+    deploymentExposure: opts.deploymentExposure,
+    authReady: opts.authReady,
+    companyDeletionEnabled: opts.companyDeletionEnabled,
+  });
+  const apiDocsHandler = apiDocsRoutes();
+
+  app.get("/health", healthHandler);
+  app.use("/health", healthHandler);
+  app.get("/api-docs", apiDocsHandler);
+  app.use("/api-docs", apiDocsHandler);
 
   // Mount API routes
   const api = Router();
@@ -273,7 +288,11 @@ export async function createApp(
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
       app.use(express.static(uiDist));
-      app.get(/.*/, (_req, res) => {
+      app.get(/.*/, (req, res, next) => {
+        if (req.path === "/health" || req.path === "/api-docs" || req.path.startsWith("/api/")) {
+          next();
+          return;
+        }
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
       });
     } else {
