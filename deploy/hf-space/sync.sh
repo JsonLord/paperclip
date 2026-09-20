@@ -68,9 +68,10 @@ done
 say "mirroring tracked files"
 git -C "$repo" ls-files -z | tar -C "$repo" --null -T - -cf - | tar -C "$space" -xf -
 
-# Delete files the Space still tracks that upstream no longer has. This also clears
-# the committed node_modules/ tree the Space picked up from an earlier upload — the
-# image installs dependencies itself, and HF caps a repo at 20k files.
+# Delete files the Space still tracks that upstream no longer has: the previous
+# lineage's sources and migrations, plus any node_modules/ entries an earlier
+# `hf upload` left behind. The image installs dependencies itself, and HF caps a
+# repo at 20k files.
 stale=0
 while IFS= read -r -d '' f; do
   keep=""

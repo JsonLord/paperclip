@@ -118,9 +118,13 @@ The GitHub backup wiring is **runtime configuration, not files**: `GITHUB_TOKEN`
 untouched. Company data lives in the container's local Postgres, restored on boot
 from `COMPANIES_BACKUP_REPO` — no file in this update touches either path.
 
-One deliberate deletion: the Space currently tracks a committed `node_modules/`
-tree from an earlier `hf upload`. The image installs dependencies itself and HF
-caps a repo at 20k files, so `sync.sh` removes it along with other stale files.
+The first real run removed 222 stale files — paths the Space tracked that this
+branch no longer has, including nine stray `node_modules/` entries from an earlier
+`hf upload`. Most of the rest are the pre-FounderOS lineage's own sources: the 13
+divergent migrations, and code since refactored (for example
+`cli/src/commands/client/auth.ts`, whose `auth bootstrap-ceo` now lives in
+`cli/src/commands/auth-bootstrap-ceo.ts` — the entrypoint still calls it and it
+still resolves).
 
 ## 5. Space secrets and variables
 
