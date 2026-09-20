@@ -31,7 +31,7 @@ say() { echo "[sync] $*"; }
 [ -n "$space" ] || die "usage: $0 <path-to-space-clone> [--push]"
 space="$(cd "$space" && pwd)"
 [ -d "$space/.git" ] || die "$space is not a git clone of the Space"
-git -C "$space" remote -v | grep -q "huggingface.co/spaces" \
+git -C "$space" remote -v 2>/dev/null | grep -q "huggingface.co/spaces" \
   || die "$space does not point at a huggingface Space remote"
 [ -z "$(git -C "$space" status --porcelain)" ] \
   || die "$space has uncommitted changes — commit or clean it first"
@@ -141,8 +141,9 @@ if git diff --cached --quiet; then
   say "Space already up to date"
   exit 0
 fi
-git status --short | head -40
-say "$(git diff --cached --numstat | wc -l) files changed"
+git status --short > "$stash/status.txt"
+head -40 "$stash/status.txt"
+say "$(wc -l < "$stash/status.txt") files changed"
 
 if [ "$push" = "--push" ]; then
   git commit -q -m "sync: paperclip $(git -C "$repo" rev-parse --short HEAD) (FounderOS + jules adapter)"
