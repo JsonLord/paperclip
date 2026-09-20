@@ -100,9 +100,25 @@ if command -v initdb >/dev/null 2>&1; then
     if [ "${empty:-0}" = "0" ] && [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${COMPANIES_BACKUP_REPO:-}" ]; then
       dbtmp="$(mktemp -d)"
       if git clone --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${COMPANIES_BACKUP_REPO}.git" "$dbtmp" >/dev/null 2>&1 && [ -f "$dbtmp/db/paperclip.sql" ]; then
-        psql "$DATABASE_URL" -v ON_ERROR_STOP=0 < "$dbtmp/db/paperclip.sql" >/dev/null 2>&1 \
-          && log "restored DB from companies backup ($(wc -c <"$dbtmp/db/paperclip.sql") bytes)" \
-          || log "DB restore completed with warnings"
+        # Migration-lineage guard. This Space previously ran a build whose drizzle
+        # journal forks from the FounderOS one after 0037: it applied
+        # 0038_careless_iron_monger..0050_curious_night_nurse, where FounderOS applies
+        # 0038_firm_integration..0061. Restoring such a dump leaves __drizzle_migrations
+        # describing the other lineage, so the shipped migrations either re-create
+        # existing objects or are skipped entirely and the server starts against a
+        # schema without jules_*/founderos_* tables. jules_sessions only exists in the
+        # FounderOS lineage, so its presence identifies a compatible dump.
+        if grep -q 'jules_sessions' "$dbtmp/db/paperclip.sql"; then
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=0 < "$dbtmp/db/paperclip.sql" >/dev/null 2>&1 \
+            && log "restored DB from companies backup ($(wc -c <"$dbtmp/db/paperclip.sql") bytes)" \
+            || log "DB restore completed with warnings"
+        else
+          rows="$(awk '/^COPY public\.companies /{f=1;next} f&&/^\\\.$/{exit} f{n++} END{print n+0}' "$dbtmp/db/paperclip.sql")"
+          log "WARNING: backup dump predates the FounderOS migration lineage (no jules_sessions) — NOT restoring it"
+          log "WARNING: the dump holds ${rows} company row(s) and is left untouched in ${COMPANIES_BACKUP_REPO}"
+          log "WARNING: starting on a fresh schema; migrate those rows by hand if they matter"
+          export PAPERCLIP_BACKUP_LINEAGE_CHANGED=1
+        fi
       else
         log "no DB backup yet — starting empty (paperclip will migrate)"
       fi

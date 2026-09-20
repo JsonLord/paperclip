@@ -70,6 +70,34 @@ the next upstream adapter.
 
 Everything else is the upstream tree mirrored in.
 
+## 3b. Divergent migration lineage (read before deploying)
+
+The Space's tree is not simply an older commit of this repo. Both share drizzle
+migrations `0000`–`0037` and then fork:
+
+| | `0038` onwards | count |
+|---|---|---|
+| Space (current) | `0038_careless_iron_monger` … `0050_curious_night_nurse` | 51 |
+| FounderOS branch | `0038_firm_integration`, `0039_jules_control_plane` … `0061` | 62 |
+
+A database carrying the Space's lineage has a `__drizzle_migrations` table
+describing migrations the new build has never heard of. Restoring such a dump and
+then running the shipped migrations either re-creates existing objects or skips
+them entirely, leaving the server on a schema with no `jules_*`/`founderos_*`
+tables. So `deploy/entrypoint.sh` now checks the dump for `jules_sessions` — a
+table only the FounderOS lineage creates — and **refuses the restore** when it is
+absent, logging the company-row count it skipped and starting on a fresh schema
+instead. `deploy/backup.sh` copies that dump to `db/paperclip.pre-founderos.sql`
+before the next backup overwrites `db/paperclip.sql`, so nothing is lost.
+
+Consequence: **a Space whose backup predates this lineage comes up empty.** If
+those rows matter, migrate them by hand before or after the deploy; the dump stays
+in `COMPANIES_BACKUP_REPO` either way.
+
+Two tables the old lineage had are gone from the new schema — `agent_kpis` and
+`activity`. The per-company export tolerates both (missing tables yield `[]`), and
+the `--exclude-table-data` patterns for them are simply no-ops.
+
 ## 4. Space configuration that is preserved
 
 `sync.sh` stashes these before mirroring and restores them afterwards:

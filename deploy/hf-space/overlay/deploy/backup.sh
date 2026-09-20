@@ -54,6 +54,16 @@ build_companies() {
     log "companies: no DATABASE_URL/pg_dump — skipping"; return 0
   fi
   mkdir -p "$wd/db" "$wd/companies"
+  # If the boot restore refused a dump from the pre-FounderOS migration lineage, keep
+  # that dump as a distinct file before this run overwrites db/paperclip.sql. Git
+  # history would hold it either way, but an explicit path is what someone recovering
+  # those rows will look for.
+  if [ -n "${PAPERCLIP_BACKUP_LINEAGE_CHANGED:-}" ] && [ -f "$wd/db/paperclip.sql" ] \
+     && ! grep -q 'jules_sessions' "$wd/db/paperclip.sql" \
+     && [ ! -f "$wd/db/paperclip.pre-founderos.sql" ]; then
+    cp "$wd/db/paperclip.sql" "$wd/db/paperclip.pre-founderos.sql"
+    log "companies: archived the pre-FounderOS dump as db/paperclip.pre-founderos.sql"
+  fi
   # Full schema + data, EXCLUDING high-volume operational tables' data (keep it small
   # and under the GitHub repo size budget). Schema is still dumped for a clean restore.
   # The FounderOS/Jules tables that matter for a rebuild (jules_profiles,
