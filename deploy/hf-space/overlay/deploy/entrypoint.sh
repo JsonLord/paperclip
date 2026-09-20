@@ -205,9 +205,42 @@ trap shutdown TERM INT
         admins="$(psql "$DATABASE_URL" -tAc "select count(*) from instance_user_roles where role='instance_admin'" 2>/dev/null | tr -d '[:space:]')"
         if [ "${admins:-0}" = "0" ]; then
           log "no instance admin — bootstrapping CEO invite"
-          # Run the CLI from source via tsx (the esbuild dist bundle doesn't resolve 'zod').
-          node --import ./server/node_modules/tsx/dist/loader.mjs cli/src/index.ts auth bootstrap-ceo 2>&1 \
-            | sed 's/^/[bootstrap-ceo] /' || log "bootstrap-ceo failed"
+          # `auth bootstrap-ceo` reads server.deploymentMode from a config file and
+          # returns early with "Run paperclip onboard first" when there is none. This
+          # Space configures everything through env, so write a config used ONLY for
+          # this command: the DB URL and invite base URL still come from the
+          # environment, and the server keeps running without a config of its own.
+          # paperclipConfigSchema refuses exposure=public unless auth.baseUrlMode is
+          # explicit and auth.publicBaseUrl is a valid URL, hence both below.
+          bootstrap_cfg="$HOME/.paperclip-bootstrap-config.json"
+          if [ -n "${PAPERCLIP_PUBLIC_URL:-}" ]; then
+            cat > "$bootstrap_cfg" <<JSON
+{
+  "\$meta": { "version": 1, "updatedAt": "$(date -uIseconds)", "source": "configure" },
+  "database": { "mode": "postgres", "connectionString": "${DATABASE_URL}" },
+  "logging": { "mode": "file", "logDir": "${HOME}/instances/default/logs" },
+  "server": {
+    "deploymentMode": "authenticated",
+    "exposure": "${PAPERCLIP_DEPLOYMENT_EXPOSURE:-public}",
+    "host": "0.0.0.0",
+    "port": ${PORT},
+    "allowedHostnames": [],
+    "serveUi": true
+  },
+  "auth": {
+    "baseUrlMode": "explicit",
+    "publicBaseUrl": "${PAPERCLIP_PUBLIC_URL}",
+    "disableSignUp": false
+  }
+}
+JSON
+            # Run the CLI from source via tsx (the esbuild dist bundle doesn't resolve 'zod').
+            node --import ./server/node_modules/tsx/dist/loader.mjs cli/src/index.ts \
+              auth bootstrap-ceo --config "$bootstrap_cfg" 2>&1 \
+              | sed 's/^/[bootstrap-ceo] /' || log "bootstrap-ceo failed"
+          else
+            log "PAPERCLIP_PUBLIC_URL is unset — cannot mint a bootstrap invite; set it in Space secrets"
+          fi
         else
           log "instance admin already present ($admins) — skipping bootstrap"
         fi

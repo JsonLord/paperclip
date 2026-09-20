@@ -164,6 +164,22 @@ agent config, artifacts, Firm files or repository context.
 Blank company creation stays generic — FounderOS is only installed through the
 explicit import path.
 
+## 6b. Claiming the instance
+
+`paperclipai auth bootstrap-ceo` reads `server.deploymentMode` from a config file
+and returns early with *"No config found … Run paperclip onboard first"* when the
+deployment is configured purely through environment variables, as this Space is.
+The entrypoint therefore writes `~/.paperclip-bootstrap-config.json` and passes it
+with `--config` for that one command; the DB URL and invite base URL still come
+from the environment and the server keeps running without a config file of its
+own. `paperclipConfigSchema` rejects `exposure: public` unless `auth.baseUrlMode`
+is `explicit` with a valid `auth.publicBaseUrl`, so both are set from
+`PAPERCLIP_PUBLIC_URL`; when that variable is empty the entrypoint says so instead
+of writing a config that fails validation.
+
+Without this the Space builds and serves, but `bootstrapStatus` stays
+`bootstrap_pending` with no active invite and nobody can become instance admin.
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under
