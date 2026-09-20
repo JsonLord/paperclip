@@ -82,6 +82,28 @@ done < <( cd "$space" && git ls-files -z )
 say "removed $stale stale file(s)"
 find "$space" -depth -type d -empty -not -path "$space/.git/*" -delete 2>/dev/null || true
 
+# The Hub rejects a push that adds a large binary outside LFS, and some Space files
+# (doc/assets/header.png, doc/assets/footer.jpg) are stored as LFS pointers. The
+# mirror above replaced those pointers with the real blobs, which the pre-receive
+# hook declines. Without git-lfs we cannot create new pointers, so restore the ones
+# the Space already has. ls-tree -l gives us the blob sizes, so only the handful of
+# pointer-sized blobs are inspected.
+lfs_kept=0
+while IFS= read -r line; do
+  size="$(printf '%s' "$line" | awk '{print $4}')"
+  path="$(printf '%s' "$line" | cut -f2-)"
+  [ "$size" -le 200 ] 2>/dev/null || continue
+  [ -e "$space/$path" ] || continue
+  blob="$(git -C "$space" cat-file -p "HEAD:$path" 2>/dev/null)" || continue
+  case "$blob" in
+    "version https://git-lfs.github.com/spec/"*)
+      printf '%s\n' "$blob" > "$space/$path"
+      lfs_kept=$((lfs_kept + 1))
+      ;;
+  esac
+done < <( git -C "$space" ls-tree -r -l HEAD )
+[ "$lfs_kept" -gt 0 ] && say "kept $lfs_kept LFS pointer(s) — install git-lfs to update those binaries"
+
 # 4) Restore the Space-only paths.
 for path in "${KEEP[@]}"; do
   [ -e "$stash/$path" ] || [ -L "$stash/$path" ] || continue
