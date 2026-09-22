@@ -77,6 +77,39 @@ export JULES_API_BASE_URL JULES_RECONCILE_INTERVAL_MS JULES_OUTBOX_INTERVAL_MS
 # or mounted under /paperclip. Firm-gated Goals stay blocked until then.
 [ -n "${FIRM_CLI_PATH:-}" ] && export FIRM_CLI_PATH && log "firm CLI at ${FIRM_CLI_PATH}"
 
+# Backup repo names are interpolated straight into
+#   https://x-access-token:$GITHUB_TOKEN@github.com/$REPO.git
+# so they must be bare `owner/repo`. A pasted clone URL would build a nonsense
+# address and, because every backup/restore step is best-effort with its output
+# suppressed, fail silently and leave the Space with no backups at all. Normalise
+# the common paste formats here, once, so backup.sh and restore.sh both inherit a
+# clean value; anything still not owner/repo gets a loud warning rather than a
+# quiet non-backup.
+normalize_repo() {
+  local v="${1:-}"
+  case "$v" in
+    https://github.com/*)   v="${v#https://github.com/}" ;;
+    http://github.com/*)    v="${v#http://github.com/}" ;;
+    ssh://git@github.com/*) v="${v#ssh://git@github.com/}" ;;
+    git@github.com:*)       v="${v#git@github.com:}" ;;
+  esac
+  v="${v%/}"; v="${v%.git}"; v="${v%/}"
+  printf '%s' "$v"
+}
+for _var in COMPANIES_BACKUP_REPO OPENVIKING_BACKUP_REPO; do
+  _raw="${!_var:-}"
+  [ -n "$_raw" ] || continue
+  _norm="$(normalize_repo "$_raw")"
+  [ "$_norm" != "$_raw" ] && log "normalized $_var '$_raw' -> '$_norm'"
+  if printf '%s' "$_norm" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+    export "$_var=$_norm"
+  else
+    log "WARNING: $_var='$_raw' is not owner/repo — that backup will not work"
+    export "$_var=$_norm"
+  fi
+done
+unset _var _raw _norm
+
 # GITHUB_TOKEN is already required by backup/restore; the FounderOS import path
 # reuses it to install the pinned FounderOS content pack into a company repo.
 [ -z "${GITHUB_TOKEN:-}" ] && log "no GITHUB_TOKEN — backups and FounderOS content install are disabled"

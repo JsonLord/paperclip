@@ -130,6 +130,14 @@ still resolves).
 
 Existing entries keep working unchanged. Add only what you want to switch on.
 
+`COMPANIES_BACKUP_REPO` and `OPENVIKING_BACKUP_REPO` are **`owner/repo`**, not
+clone URLs — they are interpolated into
+`https://x-access-token:$GITHUB_TOKEN@github.com/$REPO.git`. A pasted
+`https://github.com/owner/repo.git` would build a nonsense address and, since every
+backup step is best-effort with its output suppressed, fail silently. The entrypoint
+now normalises the usual paste formats (https, http, ssh, `git@`, trailing `/`
+or `.git`) and warns loudly about anything that still is not `owner/repo`.
+
 **Already required** — `BETTER_AUTH_SECRET`, `PAPERCLIP_PUBLIC_URL`,
 `OPENVIKING_ROOT_API_KEY`, `OPENVIKING_API_KEY`, `BLABLADOR_TOKEN`,
 `DESK_AGENT_HOST`, `GITHUB_TOKEN`, `OPENVIKING_BACKUP_REPO`, `COMPANIES_BACKUP_REPO`.
