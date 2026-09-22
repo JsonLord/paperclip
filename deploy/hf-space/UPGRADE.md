@@ -142,6 +142,9 @@ Existing entries keep working unchanged. Add only what you want to switch on.
 | `JULES_RECONCILE_INTERVAL_MS` / `JULES_OUTBOX_INTERVAL_MS` | Worker cadence | `30000` / `15000` |
 | `HEARTBEAT_SCHEDULER_ENABLED` | Dispatch loop | `true` |
 | `FIRM_CLI_PATH` | Firm business-as-code validation | unset — see §7 |
+| `PAPERCLIP_ADMIN_PASSWORD` | Password for the seeded admin. Without it the Space falls back to the log-only invite. | unset |
+| `PAPERCLIP_ADMIN_GITHUB_LOGIN` | Pins which GitHub login may be seeded as admin. | unset — the token's own login is trusted |
+| `GITHUB_API_URL` | GitHub API base, for GitHub Enterprise or testing. | `https://api.github.com` |
 
 Per-company **Jules API credentials are not env vars.** They belong in
 secret-backed Jules profiles created inside Paperclip, and are never written into
@@ -168,7 +171,43 @@ agent config, artifacts, Firm files or repository context.
 Blank company creation stays generic — FounderOS is only installed through the
 explicit import path.
 
-## 6b. Claiming the instance
+## 6a. Claiming the instance without an invite
+
+The Space's disk is ephemeral: every restart runs `initdb`, so the account you
+registered is gone and the bootstrap invite URL only lives in that boot's logs.
+`deploy/seed-admin.sh` removes that loop by re-creating the operator's own admin
+on each boot, from the GitHub profile behind `GITHUB_TOKEN`:
+
+1. `GET $GITHUB_API_URL/user` with the token → `login`, `name`, `email`
+   (falling back to `<login>@users.noreply.github.com` when the address is private)
+2. refuse unless `login` equals `PAPERCLIP_ADMIN_GITHUB_LOGIN`, when that is set
+3. `POST /api/auth/sign-up/email` — better-auth owns the password hashing; this
+   script never writes to the `account` table or invents a hash format
+4. `INSERT INTO instance_user_roles … 'instance_admin'`, guarded by `NOT EXISTS`
+
+You then sign in with that email and `PAPERCLIP_ADMIN_PASSWORD`. When either
+secret is missing, or the login does not match, or GitHub rejects the token, the
+script exits non-zero and the entrypoint falls back to the bootstrap invite
+exactly as before.
+
+**A PAT cannot provide "Sign in with GitHub".** Browser SSO needs an OAuth App
+with a client ID/secret and a redirect flow, and `server/src/auth/better-auth.ts`
+configures only `emailAndPassword` — there is no `socialProviders` block. This
+seeds an ordinary email/password account *from* your GitHub profile; it does not
+add an SSO button.
+
+Security: possession of `GITHUB_TOKEN` is the authorization, and pinning
+`PAPERCLIP_ADMIN_GITHUB_LOGIN` means a different token cannot claim the instance.
+The password is passed to `curl` over a pipe, never as an argument, so it does
+not appear in the process table.
+
+Verified against a real PostgreSQL with a stubbed GitHub and sign-up endpoint:
+seeds on a clean database; idempotent on re-run; refuses a non-matching login;
+falls back on HTTP 401, on a missing password and on a missing token; and
+re-seeds to a working admin after a full wipe of both the database and the auth
+store. A password containing quotes, `$` and spaces arrived intact.
+
+## 6b. Claiming the instance (invite fallback)
 
 `paperclipai auth bootstrap-ceo` reads `server.deploymentMode` from a config file
 and returns early with *"No config found … Run paperclip onboard first"* when the

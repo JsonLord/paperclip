@@ -204,6 +204,15 @@ trap shutdown TERM INT
       if [ -n "${DATABASE_URL:-}" ]; then
         admins="$(psql "$DATABASE_URL" -tAc "select count(*) from instance_user_roles where role='instance_admin'" 2>/dev/null | tr -d '[:space:]')"
         if [ "${admins:-0}" = "0" ]; then
+          # Preferred path: re-create the operator's own admin account from the
+          # GitHub profile behind GITHUB_TOKEN, so an ephemeral-disk wipe does not
+          # mean reading a fresh invite URL out of the logs every time.
+          seeded=""
+          seed_log="$(mktemp)"
+          if bash /app/deploy/seed-admin.sh >"$seed_log" 2>&1; then seeded=1; fi
+          sed 's/^/[seed-admin] /' "$seed_log"; rm -f "$seed_log"
+        fi
+        if [ "${admins:-0}" = "0" ] && [ -z "${seeded:-}" ]; then
           log "no instance admin — bootstrapping CEO invite"
           # `auth bootstrap-ceo` reads server.deploymentMode from a config file and
           # returns early with "Run paperclip onboard first" when there is none. This
