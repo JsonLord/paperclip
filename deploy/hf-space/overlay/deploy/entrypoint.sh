@@ -150,10 +150,11 @@ if command -v initdb >/dev/null 2>&1; then
           log "WARNING: backup dump predates the FounderOS migration lineage (no jules_sessions) — NOT restoring it"
           log "WARNING: the dump holds ${rows} company row(s) and is left untouched in ${COMPANIES_BACKUP_REPO}"
           log "WARNING: starting on a fresh schema; migrate those rows by hand if they matter"
-          export PAPERCLIP_BACKUP_LINEAGE_CHANGED=1
+          export PAPERCLIP_BACKUP_LINEAGE_CHANGED=1 PAPERCLIP_BACKUP_STALE=1
         fi
       else
         log "no DB backup yet — starting empty (paperclip will migrate)"
+        export PAPERCLIP_BACKUP_STALE=1
       fi
       rm -rf "$dbtmp"
     fi
@@ -287,6 +288,16 @@ JSON
         # FounderOS readiness, for the Space logs only (never fails the boot).
         goals="$(psql "$DATABASE_URL" -tAc "select count(*) from goal_template_instances" 2>/dev/null | tr -d '[:space:]')"
         [ -n "$goals" ] && log "founderos: ${goals} instantiated goal templates"
+
+        # When this boot could not restore (no dump yet, or one from the old
+        # migration lineage), the repo holds nothing this build can read back. Waiting
+        # for the nightly run would leave a window where a restart loses everything
+        # created in between, so publish a current dump now. backup.sh commits only
+        # when something changed, and archives the superseded dump first.
+        if [ -n "${PAPERCLIP_BACKUP_STALE:-}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+          log "no usable dump in the backup repo — running an initial backup"
+          bash /app/deploy/backup.sh 2>&1 | sed 's/^/[initial-backup] /' || log "initial backup failed"
+        fi
       fi
       break
     fi

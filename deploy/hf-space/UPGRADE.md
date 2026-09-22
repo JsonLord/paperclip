@@ -90,6 +90,16 @@ absent, logging the company-row count it skipped and starting on a fresh schema
 instead. `deploy/backup.sh` copies that dump to `db/paperclip.pre-founderos.sql`
 before the next backup overwrites `db/paperclip.sql`, so nothing is lost.
 
+Because a refused (or absent) dump leaves the repo holding nothing this build can
+read back, the entrypoint runs one **initial backup** as soon as the boot is
+healthy, instead of waiting for the 20:00 run. Without it every restart between
+boot and the nightly job would discard whatever was created in the meantime.
+`backup.sh` commits only when something changed, and archives the superseded dump
+as `db/paperclip.pre-founderos.sql` first.
+
+Note that `session` data is excluded from the dump, so a restore never carries
+browser sessions: expect to sign in again after any restart.
+
 Consequence: **a Space whose backup predates this lineage comes up empty.** If
 those rows matter, migrate them by hand before or after the deploy; the dump stays
 in `COMPANIES_BACKUP_REPO` either way.
