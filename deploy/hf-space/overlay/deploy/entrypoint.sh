@@ -332,21 +332,20 @@ JSON
   done
 ) &
 
-# 6) Periodic backup loop (best-effort) ----------------------------------------
-# A restart restores whatever was last backed up, so the backup interval is exactly
-# the window of work a restart can destroy. A once-a-day run made that window up to
-# 24h, and on free HF hardware restarts are frequent (every secret change, every
-# rebuild, every idle sleep), so work was being lost. Back up hourly by default;
-# backup.sh only commits when something actually changed, so quiet hours are free.
+# 6) Nightly backup loop (best-effort) -----------------------------------------
 (
   export TZ="${BACKUP_TZ:-Europe/Berlin}"
-  interval_min="${BACKUP_INTERVAL_MINUTES:-60}"
-  case "$interval_min" in ''|*[!0-9]*) interval_min=60 ;; esac
-  [ "$interval_min" -lt 5 ] && interval_min=5
-  log "periodic backup every ${interval_min}m"
+  hour="${BACKUP_HOUR:-20}"
   while true; do
-    sleep $(( interval_min * 60 ))
-    bash /app/deploy/backup.sh >/dev/null 2>&1 || log "periodic backup failed"
+    now=$(date +%s)
+    next=$(date -d "today ${hour}:00" +%s 2>/dev/null || echo 0)
+    [ "$next" -le "$now" ] && next=$(date -d "tomorrow ${hour}:00" +%s 2>/dev/null || echo $((now + 86400)))
+    wait_s=$(( next - now )); [ "$wait_s" -lt 60 ] && wait_s=86400
+    log "next daily backup in ${wait_s}s (${hour}:00 ${TZ})"
+    sleep "$wait_s"
+    log "daily backup starting"
+    bash /app/deploy/backup.sh || log "daily backup failed"
+    sleep 90
   done
 ) &
 
