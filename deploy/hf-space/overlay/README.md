@@ -20,13 +20,15 @@ runs as an internal sidecar on `127.0.0.1:1933`.
   private GitHub repo and restored on every boot.
 - **Agents**: local adapters (claude/codex/cursor/gemini/opencode/pi), the OpenClaw
   gateway, `hermes_local`, and the native **`jules`** adapter for remote asynchronous
-  execution. The baked hermes-gateway skill points at the desk_agent public funnel URL.
+  execution. Jules runs through that native adapter against the Jules REST API — the
+  old desk_agent tailscale-funnel proxy has been removed.
 - **FounderOS**: Companies → **Import FounderOS** installs the validation-first operating
   model — one Vision Goal, the full Goal-template catalog, the Initial Venture Validation
   project, a Hermes Founder Manager and ten Jules employees.
 - **Secrets**: everything (`BETTER_AUTH_SECRET`, `PAPERCLIP_PUBLIC_URL`,
-  `OPENVIKING_ROOT_API_KEY`, `OPENVIKING_API_KEY`, `BLABLADOR_TOKEN`, `DESK_AGENT_HOST`,
-  `GITHUB_TOKEN`, `OPENVIKING_BACKUP_REPO`, `COMPANIES_BACKUP_REPO`) is injected from
+  `OPENVIKING_ROOT_API_KEY`, `OPENVIKING_API_KEY`, `BLABLADOR_TOKEN`, `GITHUB_TOKEN`,
+  `PAPERCLIP_ADMIN_PASSWORD`, `PAPERCLIP_ADMIN_GITHUB_LOGIN`,
+  `OPENVIKING_BACKUP_REPO`, `COMPANIES_BACKUP_REPO`) is injected from
   **Space Settings → Secrets**. Nothing is hardcoded in the image or this repo.
 
 ## First run

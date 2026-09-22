@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # PID-1 supervisor for the paperclip + openviking + Hermes dashboard Space.
 # Order: template ov.conf -> FounderOS/Jules env -> restore file-state -> start openviking
-#        -> start Hermes dashboard -> start paperclip -> (once healthy) rewire agent URLs
-#        + bootstrap first admin -> nightly backup.
+#        -> start Hermes dashboard -> start paperclip -> (once healthy) seed or invite
+#        the first admin -> nightly backup.
 # Everything except paperclip is best-effort; a failure there must not crash the app.
 set -uo pipefail
 
@@ -230,10 +230,6 @@ trap shutdown TERM INT
   for _ in $(seq 1 60); do
     if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
       log "paperclip healthy — running post-boot DB steps"
-      if [ -n "${DATABASE_URL:-}" ] && [ -n "${DESK_AGENT_HOST:-}" ]; then
-        envsubst < /app/deploy/rewire-agents.sql.tmpl \
-          | psql "$DATABASE_URL" -v ON_ERROR_STOP=0 2>&1 | tail -1 | sed 's/^/[rewire] /'
-      fi
       if [ -n "${DATABASE_URL:-}" ]; then
         admins="$(psql "$DATABASE_URL" -tAc "select count(*) from instance_user_roles where role='instance_admin'" 2>/dev/null | tr -d '[:space:]')"
         if [ "${admins:-0}" = "0" ]; then
@@ -283,6 +279,8 @@ JSON
           else
             log "PAPERCLIP_PUBLIC_URL is unset — cannot mint a bootstrap invite; set it in Space secrets"
           fi
+        elif [ -n "${seeded:-}" ]; then
+          log "instance admin seeded — no bootstrap invite needed"
         else
           log "instance admin already present ($admins) — skipping bootstrap"
         fi

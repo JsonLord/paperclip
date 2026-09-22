@@ -102,11 +102,10 @@ the `--exclude-table-data` patterns for them are simply no-ops.
 
 `sync.sh` stashes these before mirroring and restores them afterwards:
 
-- `deploy/ov.conf.tmpl`, `deploy/restore.sh`, `deploy/rewire-agents.sql.tmpl`,
-  `deploy/e2e-smoke.sh` — OpenViking config template, boot restore, the
-  loopback→funnel agent-URL rewrite, and the smoke script.
-- `docker/hermes-home/` — baked `HOME` for the `hermes_local` subprocess, incl.
-  the `hermes-gateway` skill pointing at the desk_agent funnel.
+- `deploy/ov.conf.tmpl`, `deploy/restore.sh`, `deploy/e2e-smoke.sh` — OpenViking
+  config template, boot restore, and the smoke script.
+- `docker/hermes-home/` — baked `HOME` for the `hermes_local` subprocess, now
+  holding only `config.yaml` (the Blablador model for Hermes).
 - `patches/` — the embedded-postgres locale patch (plus its `package.json` entry).
 - `FounderOS-DEMO/` — the vendored company content app.
 - `Agent.md`, `CLAUDE.md`, `.gitattributes`, `.hfignore`.
@@ -140,7 +139,13 @@ or `.git`) and warns loudly about anything that still is not `owner/repo`.
 
 **Already required** — `BETTER_AUTH_SECRET`, `PAPERCLIP_PUBLIC_URL`,
 `OPENVIKING_ROOT_API_KEY`, `OPENVIKING_API_KEY`, `BLABLADOR_TOKEN`,
-`DESK_AGENT_HOST`, `GITHUB_TOKEN`, `OPENVIKING_BACKUP_REPO`, `COMPANIES_BACKUP_REPO`.
+`GITHUB_TOKEN`, `OPENVIKING_BACKUP_REPO`, `COMPANIES_BACKUP_REPO`.
+
+`DESK_AGENT_HOST` is gone. The desk_agent tailscale-funnel proxy was retired, so
+the boot-time loopback→funnel agent-URL rewrite, `deploy/rewire-agents.sql.tmpl`
+and the `hermes-gateway` skill were all removed; Jules now runs through the native
+`jules` adapter against the Jules REST API instead of that proxy. Removing the
+skill also stops this public Space publishing the tailnet hostname it hardcoded.
 
 | Name | Needed for | Default if unset |
 |---|---|---|
