@@ -246,6 +246,25 @@ of writing a config that fails validation.
 Without this the Space builds and serves, but `bootstrapStatus` stays
 `bootstrap_pending` with no active invite and nobody can become instance admin.
 
+## 6c. Hermes LLM routing
+
+`hermes-paperclip-adapter` spawns the CLI with `env = { ...process.env }` and never
+sets `HOME`, so Hermes reads `$HOME/.hermes` — `/paperclip/.hermes` at runtime. The
+baked `/opt/hermes-home/.hermes/config.yaml` was therefore never read by either the
+adapter or the dashboard. The entrypoint now writes the config where Hermes
+actually looks, from `OPENAI_COMPATIBLE_ENDPOINT`, `OPENAI_MODEL` and
+`BLABLADOR_TOKEN`, and exports `OPENAI_API_KEY`/`OPENAI_BASE_URL`.
+
+The adapter's environment check inspects the **server's** `process.env` for
+`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` or `OPENAI_API_KEY` — it never inspects
+`~/.hermes`. "No LLM API keys found in environment" meant only that those variables
+were absent from the Paperclip process, not that Hermes was unconfigured.
+
+Per-agent model matters too: `execute` passes `-m <model>` from the agent's adapter
+config, defaulting to `anthropic/claude-sonnet-4`. An agent left on an
+`anthropic/*` model will route to Anthropic regardless of the config file, so set
+it to the Blablador model id (`alias-large`).
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under

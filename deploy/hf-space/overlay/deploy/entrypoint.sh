@@ -35,6 +35,33 @@ if [ -n "${BLABLADOR_TOKEN:-}" ] && [ -f /opt/hermes-home/.hermes/config.yaml ];
     && log "templated hermes-home config.yaml"
 fi
 
+# 1a-i) Hermes LLM routing ------------------------------------------------------
+# hermes-paperclip-adapter spawns the CLI with `env = { ...process.env }` and never
+# sets HOME, so Hermes reads $HOME/.hermes — not the baked /opt/hermes-home. Write
+# the config where it is actually read, and export the OpenAI-compatible variables
+# so the adapter's environment check (which inspects the *server's* process.env for
+# ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY) stops reporting no keys.
+: "${OPENAI_COMPATIBLE_ENDPOINT:=https://api.helmholtz-blablador.fz-juelich.de/v1}"
+: "${OPENAI_MODEL:=alias-large}"
+if [ -n "${BLABLADOR_TOKEN:-}" ]; then
+  export OPENAI_API_KEY="${OPENAI_API_KEY:-$BLABLADOR_TOKEN}"
+  export OPENAI_BASE_URL="${OPENAI_BASE_URL:-$OPENAI_COMPATIBLE_ENDPOINT}"
+  export OPENAI_MODEL OPENAI_COMPATIBLE_ENDPOINT
+  mkdir -p "$HOME/.hermes"
+  cat > "$HOME/.hermes/config.yaml" <<YAML
+model:
+  provider: custom
+  base_url: ${OPENAI_COMPATIBLE_ENDPOINT}
+  default: ${OPENAI_MODEL}
+  model: ${OPENAI_MODEL}
+  api_key: ${BLABLADOR_TOKEN}
+YAML
+  chmod 600 "$HOME/.hermes/config.yaml"
+  log "hermes routed to ${OPENAI_MODEL} @ ${OPENAI_COMPATIBLE_ENDPOINT} (config at \$HOME/.hermes/config.yaml)"
+else
+  log "BLABLADOR_TOKEN not set — Hermes will fall back to its default model and report no API keys"
+fi
+
 # 1a) FounderOS / Jules runtime env --------------------------------------------
 # The FounderOS build adds a native `jules` adapter, a Hermes "Founder Manager",
 # durable Jules sessions and a run-scoped callback capability token. None of these
