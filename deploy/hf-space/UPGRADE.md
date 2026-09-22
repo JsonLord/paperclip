@@ -168,6 +168,7 @@ skill also stops this public Space publishing the tailnet hostname it hardcoded.
 | `PAPERCLIP_ADMIN_PASSWORD` | Password for the seeded admin. Without it the Space falls back to the log-only invite. | unset |
 | `PAPERCLIP_ADMIN_GITHUB_LOGIN` | Pins which GitHub login may be seeded as admin. | unset — the token's own login is trusted |
 | `GITHUB_API_URL` | GitHub API base, for GitHub Enterprise or testing. | `https://api.github.com` |
+| `BACKUP_INTERVAL_MINUTES` | How often the periodic backup runs; also the window a restart can destroy. Floor of 5. | `60` |
 
 Per-company **Jules API credentials are not env vars.** They belong in
 secret-backed Jules profiles created inside Paperclip, and are never written into
