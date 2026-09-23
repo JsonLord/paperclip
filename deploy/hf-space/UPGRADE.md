@@ -266,6 +266,33 @@ config, defaulting to `anthropic/claude-sonnet-4`. An agent left on an
 `anthropic/*` model will route to Anthropic regardless of the config file, so set
 it to the Blablador model id (`alias-large`).
 
+## 6d. Jules profiles from Space secrets
+
+A Jules profile's `secretRef` is a UUID in Paperclip's encrypted secret store,
+resolved company-scoped by `resolveSecretValue()` with **no environment fallback**,
+so `JULES_API_1`/`JULES_API_2` cannot be referenced directly. The disk is also
+ephemeral, so a hand-made profile is lost at the next restore.
+
+`deploy/seed-jules.sh` closes both gaps on every boot: it signs in as the seeded
+admin, imports each `JULES_API_*` value as a company secret through the REST API
+(never SQL — the `local_encrypted` provider owns the material format), and creates
+one profile per key at `sessionStartLimit=15` / `sessionStartWindowSec=86400`. Two
+keys therefore give **30 session starts per 24h**.
+
+Profile names are scoped to the company (`jules-<companyId8>-<n>`) because
+`jules_profiles` carries no `companyId` while `secretRef` is company-scoped — a
+bare name would look present while pointing at another company's secret and fail
+only at dispatch.
+
+| Variable | Effect |
+|---|---|
+| `JULES_SEED_COMPANY` | Target company id or exact name. Required once more than one company exists; the seeder refuses to guess. |
+| `JULES_SEED_ROTATE` | Push the current env value as a new secret version. Off by default so boots do not pile up versions. |
+| `JULES_SESSION_START_LIMIT` / `JULES_SESSION_WINDOW_SEC` | Override the 15 / 86400 defaults. |
+
+Binding a repository stays manual, since it needs the Jules-side source id:
+`POST /api/companies/<id>/jules-sources {repository, source, profileIds}`.
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under

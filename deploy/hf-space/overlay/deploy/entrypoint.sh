@@ -326,6 +326,14 @@ JSON
         goals="$(psql "$DATABASE_URL" -tAc "select count(*) from goal_template_instances" 2>/dev/null | tr -d '[:space:]')"
         [ -n "$goals" ] && log "founderos: ${goals} instantiated goal templates"
 
+        # Jules profiles reference Paperclip-stored secrets by UUID, so the
+        # JULES_API_* Space secrets have to be imported before a profile can exist.
+        # Re-run every boot: the disk is ephemeral, so a hand-made profile does not
+        # survive. The script is idempotent and skips cleanly when unconfigured.
+        seedj="$(mktemp)"
+        bash /app/deploy/seed-jules.sh >"$seedj" 2>&1 || true
+        sed 's/^/[seed-jules] /' "$seedj"; rm -f "$seedj"
+
         # When this boot could not restore (no dump yet, or one from the old
         # migration lineage), the repo holds nothing this build can read back. Waiting
         # for the nightly run would leave a window where a restart loses everything
