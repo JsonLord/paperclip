@@ -19,7 +19,10 @@ log() { echo "[seed-jules $(date -uIseconds)] $*"; }
 
 : "${PORT:=7860}"
 API="http://127.0.0.1:${PORT}"
-ORIGIN="${PAPERCLIP_PUBLIC_URL:-$API}"
+# board-mutation-guard builds its allowlist from the request's own Host header, so
+# Origin must match the address we actually call — not PAPERCLIP_PUBLIC_URL, which
+# is a different host and gets rejected with "requires trusted browser origin".
+ORIGIN="$API"
 : "${GITHUB_API_URL:=https://api.github.com}"
 : "${JULES_SESSION_START_LIMIT:=15}"
 : "${JULES_SESSION_WINDOW_SEC:=86400}"
