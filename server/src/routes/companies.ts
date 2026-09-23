@@ -17,6 +17,7 @@ import {
   companyPortabilityService,
   companyService,
   founderOsBootstrapService,
+  julesEnvProfileService,
   persistedJulesSourceResolver,
   heartbeatService,
   logActivity,
@@ -129,6 +130,10 @@ export function companyRoutes(db: Db) {
     const repo = await inspectCompanyRepository(repository, typeof req.body?.ref === "string" ? req.body.ref : undefined);
     const company = await svc.create({ name, description: typeof req.body?.description === "string" ? req.body.description : `FounderOS company imported from ${repository}`, firmGithubRepo: repository });
     await access.ensureMembership(company.id, "user", req.actor.userId ?? "local-board", "owner", "active");
+    // Import the JULES_API_* environment keys as this company's secrets before the
+    // resolver runs. Seeding later cannot help: bootstrap would already have found
+    // no usable profile and created every Jules worker paused.
+    await julesEnvProfileService(db).ensureForCompany(company.id, { userId: req.actor.userId ?? "system" });
     const resolver = persistedJulesSourceResolver(db, company.id, (apiKey) => new JulesApiClient("https://jules.googleapis.com/v1alpha", apiKey));
     const heartbeat = heartbeatService(db);
     const bootstrap = founderOsBootstrapService(db, { contentCommit, sourceResolver: resolver, repositoryWriter: process.env.GITHUB_TOKEN ? githubFounderOsRepositoryWriter() : undefined, queueInitialOutcome: async (issueId) => {

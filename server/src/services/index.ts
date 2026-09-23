@@ -57,3 +57,4 @@ export { businessPlanService, businessPlanSystem, compileBusinessPlanTemplate, c
 export { pitchService, pitchSystem, compilePitchTemplate, compilePitch, validatePitch, compilePitchArtifacts, evaluatePitch, pitchFingerprint, bpwPitchResourcePack, pitchFrameworkResourcePack, PITCH_STEPS } from "./pitch.js";
 export { contentPublishingService, BlockedPostioPublisher, validateLinkedinCandidate, linkedinBody, assertPostioApproval, mapPostioResult, POSTIO_CONTRACT_STATUS, PUBLICATION_STATES } from "./content-publishing.js";
 export { contentGtmService, contentDistributionSystem, gtmCampaignSystem, contentGoalTemplates, contentResourcePacks, validateCampaign, analyzeCampaign, campaignArtifacts, SIGNAL_STRENGTH } from "./content-gtm.js";
+export { julesEnvProfileService } from "./jules-env-profiles.js";
