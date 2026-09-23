@@ -165,6 +165,7 @@ skill also stops this public Space publishing the tailnet hostname it hardcoded.
 | `JULES_RECONCILE_INTERVAL_MS` / `JULES_OUTBOX_INTERVAL_MS` | Worker cadence | `30000` / `15000` |
 | `HEARTBEAT_SCHEDULER_ENABLED` | Dispatch loop | `true` |
 | `FIRM_CLI_PATH` | Firm business-as-code validation | unset — see §7 |
+| `PAPERCLIP_AGENT_JWT_SECRET` | Signs the `PAPERCLIP_API_KEY` injected into agent runs. Without it `createLocalAgentJwt()` returns null and every `hermes_local` agent gets 401 from the Paperclip API. | Derived from `BETTER_AUTH_SECRET` (≥32 chars) by the entrypoint |
 | `PAPERCLIP_ADMIN_PASSWORD` | Password for the seeded admin. Without it the Space falls back to the log-only invite. | unset |
 | `PAPERCLIP_ADMIN_GITHUB_LOGIN` | Pins which GitHub login may be seeded as admin. | unset — the token's own login is trusted |
 | `GITHUB_API_URL` | GitHub API base, for GitHub Enterprise or testing. | `https://api.github.com` |

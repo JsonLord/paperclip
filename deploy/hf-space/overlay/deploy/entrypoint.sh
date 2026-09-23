@@ -80,6 +80,16 @@ if [ -z "${PAPERCLIP_JULES_CAPABILITY_SECRET:-}" ] && [ -z "${PAPERCLIP_AGENT_JW
   fi
 fi
 
+# agent-auth-jwt.ts reads PAPERCLIP_AGENT_JWT_SECRET with no fallback, unlike
+# better-auth.ts and jules-run-capability.ts which both fall back to
+# BETTER_AUTH_SECRET. Without it createLocalAgentJwt() returns null, the server
+# logs "running without injected PAPERCLIP_API_KEY", and every hermes_local agent
+# hits 401 on the Paperclip API — it cannot list its own issues or close them.
+if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ] && [ "${#BETTER_AUTH_SECRET}" -ge 32 ]; then
+  export PAPERCLIP_AGENT_JWT_SECRET="$BETTER_AUTH_SECRET"
+  log "PAPERCLIP_AGENT_JWT_SECRET derived from BETTER_AUTH_SECRET (agents get an injected PAPERCLIP_API_KEY)"
+fi
+
 # Hermes Founder Manager (triage / judge / next-best-action). Defaults to the same
 # Blablador endpoint the hermes_local adapter and OpenViking already use.
 if [ -n "${BLABLADOR_TOKEN:-}" ]; then
