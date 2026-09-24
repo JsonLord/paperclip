@@ -50,8 +50,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // A required output that is not writable is a contract no worker can satisfy. The
     // goal's output paths were unioned into requiredOutputs but not into writeScope, so
     // a session was told to produce business-case/MARKET_ANALYSIS.md and, four sections
-    // later, to write only within the bootstrap template's paths — which exclude it. The
-    // compliant response is to do nothing and finish, which is what happened.
+    // later, to write only within the bootstrap template's paths — which exclude it.
+    //
+    // This is not what ended the first two sessions: both stopped at plan approval
+    // without writing anything, so neither reached the contradiction. It is the blocker
+    // they would have hit next — the plan they generated named these exact paths.
     writeScope: unique([...outcomeTemplate.writeScope], supportStrings("writeScope"), supportStrings("outputPaths")),
     linear: { mode: "NONE" },
     objective: asString(ctx.config.objective, outcomeTemplate.objective), inputs: unique(Array.isArray(ctx.config.inputs) ? ctx.config.inputs.filter((item): item is string => typeof item === "string") : [], supportStrings("inputPaths")),
