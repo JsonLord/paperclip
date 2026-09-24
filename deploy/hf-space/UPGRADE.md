@@ -360,23 +360,40 @@ not the previous company's history — a boot that lost data and re-imports star
 company over. Recovering the original rows instead means restoring the dump from the
 backup repo's git history.
 
-## 6e. Backups never shrink the company set
+## 6e. Backups never overwrite a dump this boot did not start from
 
-`backup.sh` runs on shutdown as well as daily, and a shutdown backup races the next
-boot's restore: the outgoing container pushes ~10s *after* the new one has already
-restored. A boot therefore restores the state from two boots ago, and a container
-that came up on a stale dump would publish its own smaller state back over the good
-one — leaving the Space alternating between two states forever.
+`backup.sh` runs on shutdown as well as daily, and the shutdown push lands about ten
+seconds after the next container has already restored. Publishing then overwrites
+work this container never saw, and the Space alternates between two states forever.
 
-The dump step now counts the rows in the repo's existing `COPY public.companies`
-block and refuses to publish fewer than that, restoring the repo's dump and skipping
-the per-company export instead. A failed `pg_dump` does the same, because the `>`
-redirect has already truncated the file by the time the failure is known. Set
-`PAPERCLIP_BACKUP_ALLOW_SHRINK=1` to publish a genuinely smaller set (after deleting
-a company on purpose).
+The boot records the sha256 of the dump it restored in
+`$HOME/.paperclip-backup-baseline`, and a backup publishes only when the repo still
+holds that dump. If something else landed in between, the run refuses and leaves the
+repo untouched. A successful push updates the baseline, so a daily backup does not
+make the same container's shutdown backup refuse itself.
 
-Nothing is lost when the guard trips — the refused state is still in the running
-database, and every earlier dump is in the backup repo's git history.
+An earlier version compared company *counts* and refused to shrink. That is the wrong
+invariant in both directions: a legitimate re-import after a lossy restore has fewer
+companies than a stale repo dump and was refused, while a boot that restored stale
+data and then grew past it was allowed to publish over newer work. Content identity
+answers the question the count was standing in for.
+
+| Situation | Result |
+|---|---|
+| Repo holds the dump this boot restored | Publish |
+| Repo holds something else | Refuse, repo untouched |
+| Repo empty | Publish |
+| No baseline, boot could not restore (`PAPERCLIP_BACKUP_STALE`) | Publish — this is how the repo gets a usable dump |
+| No baseline, no such reason | Refuse |
+| `PAPERCLIP_BACKUP_FORCE=1` (or the older `PAPERCLIP_BACKUP_ALLOW_SHRINK=1`) | Publish regardless |
+
+A failed `pg_dump` publishes nothing and leaves the repo's dump in place: the `>`
+redirect truncates the file before the failure is known, so the previous behaviour
+committed an empty dump and rewrote the per-company JSON from a database it had just
+failed to read.
+
+Nothing is lost when a run refuses — the state is still in the running database, and
+every earlier dump is in the backup repo's git history.
 
 ## 7. Known limitation
 

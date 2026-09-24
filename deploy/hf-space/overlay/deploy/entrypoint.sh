@@ -182,6 +182,14 @@ if command -v initdb >/dev/null 2>&1; then
           psql "$DATABASE_URL" -v ON_ERROR_STOP=0 < "$dbtmp/db/paperclip.sql" >/dev/null 2>&1 \
             && log "restored DB from companies backup ($(wc -c <"$dbtmp/db/paperclip.sql") bytes)" \
             || log "DB restore completed with warnings"
+          # Record which dump this boot started from. backup.sh refuses to publish over
+          # a dump the repo gained after that point: the shutdown backup pushes about
+          # ten seconds after the next container has already restored, so without this
+          # a container can overwrite work it never saw.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum < "$dbtmp/db/paperclip.sql" | awk '{print $1}' > "$HOME/.paperclip-backup-baseline" 2>/dev/null \
+              && log "restore provenance recorded ($(cut -c1-12 <"$HOME/.paperclip-backup-baseline"))"
+          fi
         else
           rows="$(awk '/^COPY public\.companies /{f=1;next} f&&/^\\\.$/{exit} f{n++} END{print n+0}' "$dbtmp/db/paperclip.sql")"
           log "WARNING: backup dump predates the FounderOS migration lineage (no jules_sessions) — NOT restoring it"

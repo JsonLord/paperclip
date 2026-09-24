@@ -10,6 +10,10 @@ export HOME="${HOME:-/paperclip}"
 
 if [ -z "${GITHUB_TOKEN:-}" ]; then log "no GITHUB_TOKEN — skipping backup"; exit 0; fi
 
+# Set by build_companies to the dump it wrote; promoted to the restore provenance
+# once the push succeeds.
+PENDING_DUMP_SHA=""
+
 # Clone repo (or init if empty), let $build populate the workdir, commit + push.
 backup_repo() {
   local repo="$1" build="$2"
@@ -25,8 +29,17 @@ backup_repo() {
     log "$repo: no changes"
   else
     git -C "$wd" commit -q -m "backup $(date -uIminutes)"
-    if git -C "$wd" push -q "$url" HEAD:main >/dev/null 2>&1; then log "$repo: pushed"; else log "$repo: push failed"; fi
+    if git -C "$wd" push -q "$url" HEAD:main >/dev/null 2>&1; then
+      log "$repo: pushed"
+      # The repo now holds what this run published, so a later run in this container
+      # compares against that rather than against the dump the boot restored. Recorded
+      # only on success: a failed push leaves the repo as it was.
+      [ -n "${PENDING_DUMP_SHA:-}" ] && printf '%s\n' "$PENDING_DUMP_SHA" > "$HOME/.paperclip-backup-baseline" 2>/dev/null
+    else
+      log "$repo: push failed"
+    fi
   fi
+  PENDING_DUMP_SHA=""
   rm -rf "$wd"
 }
 
@@ -39,8 +52,21 @@ build_openviking() {
   printf '{"component":"openviking","backed_up":"%s"}\n' "$(date -uIseconds)" > "$wd/BACKUP_INFO.json"
 }
 
-# Count the rows in a plain pg_dump's `COPY public.companies` block. Used to refuse a
-# backup that would publish fewer companies than the repo already holds.
+# Both overrides are accepted: PAPERCLIP_BACKUP_FORCE is the current name, and
+# PAPERCLIP_BACKUP_ALLOW_SHRINK is kept so an existing deployment's variable still works.
+backup_forced() { [ -n "${PAPERCLIP_BACKUP_FORCE:-}${PAPERCLIP_BACKUP_ALLOW_SHRINK:-}" ] && echo 1; }
+
+# Identify a dump by content, so a run can tell "the repo still holds what I restored"
+# from "something else landed". Empty for a missing or empty file.
+dump_sha() {
+  local file="$1"
+  [ -s "$file" ] || return 0
+  command -v sha256sum >/dev/null 2>&1 || return 0
+  sha256sum < "$file" | awk '{print $1}'
+}
+
+# Count the rows in a plain pg_dump's `COPY public.companies` block. Reported in the
+# log so a refusal says what was at stake.
 dump_company_count() {
   local file="$1"
   [ -s "$file" ] || { echo 0; return 0; }
@@ -78,13 +104,32 @@ build_companies() {
   # jules_profile_sources, company_jules_sources, jules_sessions, goals,
   # goal_template_instances, resource_pack_snapshots) are deliberately NOT excluded;
   # only their append-only event/activity logs are.
-  # A shutdown backup races the next boot's restore: a container that restored a stale
-  # dump would otherwise publish its own smaller state over a good one, and the Space
-  # alternates between the two forever. Refuse to shrink the company set unless asked.
-  local prior_count prior_saved
+  # A shutdown backup races the next boot's restore: it pushes about ten seconds after
+  # the next container has already restored. Publishing then overwrites work this
+  # container never saw. Compare the repo's dump against the one this boot restored:
+  # equal means nothing has landed since and publishing is safe, different means
+  # another container published in the meantime.
+  local prior_count prior_saved prior_sha restored_sha
   prior_count="$(dump_company_count "$wd/db/paperclip.sql")"
   prior_saved=""
   if [ -s "$wd/db/paperclip.sql" ]; then prior_saved="$(mktemp)"; cp "$wd/db/paperclip.sql" "$prior_saved"; fi
+  prior_sha="$(dump_sha "$wd/db/paperclip.sql")"
+  restored_sha="$(cat "$HOME/.paperclip-backup-baseline" 2>/dev/null | tr -d '[:space:]')"
+
+  if [ -n "$prior_sha" ] && [ "$prior_sha" != "$restored_sha" ] && [ -z "$(backup_forced)" ]; then
+    if [ -z "$restored_sha" ] && [ -n "${PAPERCLIP_BACKUP_STALE:-}" ]; then
+      # This boot deliberately did not restore (no dump yet, or the wrong migration
+      # lineage). Publishing is how the repo gets a usable dump at all.
+      log "companies: publishing over an unrestored dump (this boot could not use it)"
+    else
+      log "companies: REFUSING to publish — the backup repo moved since this boot restored"
+      [ -n "$restored_sha" ] || log "companies: this boot has no recorded baseline (it did not restore a dump)"
+      log "companies: repo dump ${prior_sha:0:12} (${prior_count} company/companies), this boot restored ${restored_sha:0:12}"
+      log "companies: another container published after this one started; set PAPERCLIP_BACKUP_FORCE=1 to overwrite it anyway"
+      rm -f "$prior_saved"
+      return 1
+    fi
+  fi
 
   if pg_dump --no-owner --no-privileges \
        --exclude-table-data='heartbeat_runs' \
@@ -108,14 +153,11 @@ build_companies() {
   fi
 
   local new_count; new_count="$(dump_company_count "$wd/db/paperclip.sql")"
-  if [ "$new_count" -lt "$prior_count" ] && [ -n "$prior_saved" ] \
-     && [ -z "${PAPERCLIP_BACKUP_ALLOW_SHRINK:-}" ]; then
-    log "companies: REFUSING to publish $new_count company/companies over the $prior_count already backed up"
-    log "companies: this DB is probably a stale restore; set PAPERCLIP_BACKUP_ALLOW_SHRINK=1 to override"
-    cp "$prior_saved" "$wd/db/paperclip.sql"
-    rm -f "$prior_saved"
-    return 1
-  fi
+  log "companies: publishing ${new_count} company/companies (repo held ${prior_count})"
+  # What this run publishes becomes the dump a later run in this container must match,
+  # so a daily backup does not make the shutdown backup refuse itself. Recorded only
+  # after the push succeeds, in backup_repo.
+  PENDING_DUMP_SHA="$(dump_sha "$wd/db/paperclip.sql")"
   rm -f "$prior_saved"
   # Per-company folders (human-identifiable): companies/<name-slug>-<id8>/
   rm -rf "$wd"/companies/* 2>/dev/null
