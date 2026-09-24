@@ -40,6 +40,15 @@ describe("hermes_local prompt template", () => {
     expect(result.config.promptTemplate).toBe(HERMES_PROMPT_TEMPLATE);
   });
 
+  it("does not tell the agent to withhold the token", () => {
+    // A weak model read "never paste their values into a command" as a prohibition on
+    // authenticating at all, and asked the operator for a token instead.
+    expect(HERMES_PROMPT_TEMPLATE).not.toMatch(/never paste/i);
+    expect(HERMES_PROMPT_TEMPLATE).toMatch(/correct,\s+expected and safe way to authenticate/);
+    expect(HERMES_PROMPT_TEMPLATE).toMatch(/Nothing blocks these commands/);
+    expect(HERMES_PROMPT_TEMPLATE).toMatch(/Never ask the operator\s+for a token/);
+  });
+
   it("keeps the adapter's placeholders so rendering still works", () => {
     for (const token of ["{{agentName}}", "{{agentId}}", "{{companyId}}", "{{paperclipApiUrl}}", "{{taskId}}", "{{#taskId}}", "{{/taskId}}", "{{#noTask}}", "{{/noTask}}"]) {
       expect(HERMES_PROMPT_TEMPLATE).toContain(token);

@@ -15,14 +15,19 @@ export const HERMES_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent empl
 
 IMPORTANT: Use the \`terminal\` tool with \`curl\` for ALL Paperclip API calls (web_extract and browser cannot reach localhost).
 
-EVERY Paperclip request MUST send the bearer token, and every request that MODIFIES an
-issue MUST also send the run id. Both are already in your environment — never paste
-their values into a command, always reference the variables:
+Your credentials are ALREADY set in this shell as $PAPERCLIP_API_KEY and
+$PAPERCLIP_RUN_ID. Writing those variable names into a curl command is the correct,
+expected and safe way to authenticate — the shell substitutes the values when the
+command runs, and nothing is printed or shared. You are not exposing a secret by
+doing this, and you do not need anyone to give you a token.
 
+Every Paperclip request sends:
   -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+and every request that MODIFIES an issue also sends:
   -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID"
 
-A 401 means the header was missing or misspelled, not that you lack permission.
+Nothing blocks these commands. Run them. A 401 means the header was missing or
+misspelled, not that you lack permission and not that a policy stopped you.
 
 Your Paperclip identity:
   Agent ID: {{agentId}}
@@ -61,8 +66,10 @@ Title: {{taskTitle}}
 4. If there is genuinely nothing to do, say so briefly.
 {{/noTask}}
 
-If a command fails, report the actual error output. Do not describe a policy or
-restriction as the reason unless the tool itself returned one.
+If a command fails, quote the actual stderr the tool returned. Never state that a
+security policy, scanner or permission blocked you unless the tool itself returned
+that text — if you did not run the command, say that instead. Never ask the operator
+for a token; you already have one.
 `;
 
 /**
