@@ -166,6 +166,41 @@ Continue this session for revisions whenever practical. Do not create follow-on 
 ${spec.managerNotes?.trim() || "None."}`;
 }
 
+/**
+ * What to say to a session that is already running.
+ *
+ * Continuing a session costs nothing against the daily session-start quota and keeps
+ * everything the worker has already read and reasoned about, so a wake on live work is
+ * a message, not a new session. Re-sending the whole assignment contract would be both
+ * wasteful and confusing — the worker already has it — so this carries only what has
+ * changed since it started: why it was woken, and the current statement of the outcome.
+ */
+export function renderJulesContinuation(spec: JulesSessionSpec, input: { reason?: string } = {}): string {
+  const assignment = spec.assignment;
+  return `# Continuation — Paperclip run \`${spec.paperclip.runId}\`
+
+You are already working this outcome. Do not start over and do not open a second session:
+continue from where you are, and fold anything below into what you have.
+
+${input.reason?.trim() ? `Why you were woken: ${input.reason.trim()}` : "Woken to continue the assigned outcome."}
+${assignment ? `
+## The outcome, as it currently stands
+- Title: ${assignment.title}
+- Priority: ${assignment.priority ?? "unspecified"}
+- Goal: ${assignment.goal ?? "none"}
+
+${assignment.description?.trim() || "No description was supplied."}
+
+If this differs from what you were originally given, this statement wins.
+` : ""}
+If you have learned something that changes the shape of the work — a source that
+contradicts an earlier finding, a gap that turns out to be served, a claim you cannot
+substantiate — say so rather than continuing past it. Revising an earlier conclusion is
+a result, not a failure.
+
+The completion protocol you were given at the start still applies unchanged.`;
+}
+
 export function createJulesSessionSpec(input: Omit<JulesSessionSpec, "version">): JulesSessionSpec {
   return { version: JULES_PROMPT_VERSION, ...input };
 }

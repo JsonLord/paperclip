@@ -36,10 +36,24 @@ function matches(table: any, row: Row, condition: any): boolean {
   });
 }
 
-export function fakeDb(seed: Array<[unknown, Row[]]> = []) {
+/**
+ * `unique` declares a table's unique key so `onConflictDoNothing` can mean what it means
+ * in Postgres: the duplicate is dropped and `returning()` yields nothing. Code that uses
+ * a unique index to make an action happen exactly once — approving a plan, spending a
+ * quota — is only testable against a fake that honours it, and silently inserting the
+ * duplicate turns that guarantee into a test that passes while the mechanism is absent.
+ * Declared per test rather than read from Drizzle's internals, which are not a contract.
+ */
+export function fakeDb(seed: Array<[unknown, Row[]]> = [], options: { unique?: Array<[unknown, string[]]> } = {}) {
   const rows = new Map<unknown, Row[]>(seed);
+  const uniqueKeys = new Map<unknown, string[]>(options.unique ?? []);
   let id = 0;
   const rowsOf = (table: unknown) => { const existing = rows.get(table); if (existing) return existing; const created: Row[] = []; rows.set(table, created); return created };
+  const conflicts = (table: unknown, candidate: Row) => {
+    const key = uniqueKeys.get(table);
+    if (!key) return false;
+    return rowsOf(table).some((row) => key.every((column) => row[column] === candidate[column]));
+  };
 
   const select = () => {
     let table: any = null;
@@ -64,11 +78,14 @@ export function fakeDb(seed: Array<[unknown, Row[]]> = []) {
       values: (value: any) => {
         const made = (Array.isArray(value) ? value : [value]).map((v) => ({ id: v.id ?? `id-${++id}`, ...v }));
         const target = rowsOf(table);
+        let skipConflicts = false;
+        const admitted = () => (skipConflicts ? made.filter((row) => !conflicts(table, row)) : made);
+        const commit = () => { const kept = admitted(); target.push(...kept); return kept };
         const op: any = {
-          onConflictDoNothing: () => op,
+          onConflictDoNothing: () => { skipConflicts = true; return op },
           onConflictDoUpdate: () => op,
-          returning: async () => { target.push(...made); return made },
-          then: (ok: any) => Promise.resolve(target.push(...made)).then(ok),
+          returning: async () => commit(),
+          then: (ok: any) => Promise.resolve(commit().length).then(ok),
         };
         return op;
       },

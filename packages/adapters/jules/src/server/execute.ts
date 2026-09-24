@@ -1,7 +1,7 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { asBoolean, asNumber, asString, renderTemplate } from "@paperclipai/adapter-utils/server-utils";
 import { extractPullRequest, JulesApiClient, type JulesRemoteSession } from "./api.js";
-import { createJulesSessionSpec, JULES_OUTCOME_TEMPLATES, renderJulesPrompt, type JulesSessionSpec } from "../prompts.js";
+import { createJulesSessionSpec, JULES_OUTCOME_TEMPLATES, renderJulesContinuation, renderJulesPrompt, type JulesSessionSpec } from "../prompts.js";
 
 const TERMINAL = new Set(["FAILED", "COMPLETED", "CANCELLED"]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,8 +70,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const api = new JulesApiClient(baseUrl, apiKey);
   let session: JulesRemoteSession;
   const existingId = asString(ctx.runtime.sessionParams?.julesSessionId, "").trim();
-  if (existingId) session = await api.getSession(existingId);
-  else {
+  const existing = existingId ? await api.getSession(existingId) : null;
+  // A session that is still live is the cheap path and the good one: continuing costs
+  // nothing against the daily start quota and keeps everything the worker has already
+  // read. Until now a wake on live work fetched the session and polled it in silence —
+  // the freshly rendered prompt was computed and thrown away, so the worker was never
+  // told why it had been woken or that the outcome had been restated.
+  //
+  // A COMPLETED session is left alone: it is a completion candidate waiting on
+  // validation, not work to push further. FAILED and CANCELLED cannot be continued at
+  // all, and re-polling one stranded the outcome forever, so those start afresh.
+  const resumable = existing ? !TERMINAL.has(stateOf(existing)) : false;
+  const spent = existing ? stateOf(existing) === "COMPLETED" : false;
+  if (existing && (resumable || spent)) {
+    session = existing;
+    if (resumable) {
+      const continuation = configuredSpec && "version" in configuredSpec
+        ? renderJulesContinuation(configuredSpec as JulesSessionSpec, { reason: asString(ctx.context.wakeReason, "") })
+        : prompt;
+      await api.sendMessage(existing.id, continuation);
+      await ctx.onLog("stdout", `[jules] continued remote session ${existing.id}\n`);
+      await ctx.onMeta?.({ adapterType: "jules", command: "Jules session continued", prompt: continuation });
+      session = await api.getSession(existing.id);
+    }
+  } else {
     session = await api.createSession({
       prompt,
       source,
