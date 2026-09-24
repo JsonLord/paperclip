@@ -81,7 +81,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // validation, not work to push further. FAILED and CANCELLED cannot be continued at
   // all, and re-polling one stranded the outcome forever, so those start afresh.
   const resumable = existing ? !TERMINAL.has(stateOf(existing)) : false;
-  const spent = existing ? stateOf(existing) === "COMPLETED" : false;
+  // A COMPLETED session is only worth preserving if it delivered something. One that
+  // finished without a pull request delivered nothing, and leaving it in place made the
+  // outcome permanently undispatchable: every later wake found the same dead session,
+  // returned it unchanged, and the issue sat in `todo` for good.
+  const spent = existing ? stateOf(existing) === "COMPLETED" && extractPullRequest(existing) !== null : false;
   if (existing && (resumable || spent)) {
     session = existing;
     if (resumable) {

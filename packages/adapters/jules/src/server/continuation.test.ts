@@ -41,13 +41,27 @@ describe("waking an agent that already has a Jules session", () => {
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(":create");
   });
 
-  it("leaves a COMPLETED session alone — it is a candidate awaiting validation", async () => {
+  it("leaves a COMPLETED session that delivered a pull request alone", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(ok({ id: "remote-1", state: "COMPLETED" }))
+      .mockResolvedValueOnce(ok({ id: "remote-1", state: "COMPLETED", outputs: [{ pullRequest: { url: "https://github.com/acme/co/pull/3" } }] }))
       .mockResolvedValueOnce(ok({ activities: [] }));
     const result = await run("existing", fetchMock);
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(":sendMessage");
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(":create");
     expect(result.resultJson).toMatchObject({ completionCandidate: true, accepted: false });
+  });
+
+  it("starts fresh after a COMPLETED session that delivered nothing", async () => {
+    // Preserving it made the outcome permanently undispatchable: every later wake found
+    // the same dead session and returned it unchanged.
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ok({ id: "remote-1", state: "COMPLETED" }))
+      .mockResolvedValueOnce(ok({ id: "remote-2", state: "QUEUED" }))
+      .mockResolvedValueOnce(ok({ activities: [] }));
+    await run("existing", fetchMock);
+    expect(call(fetchMock, 1).method).toBe("POST");
+    expect(call(fetchMock, 1).body.prompt).toContain("Map the competitor landscape");
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(":sendMessage");
   });
 
   for (const state of ["FAILED", "CANCELLED"]) {
