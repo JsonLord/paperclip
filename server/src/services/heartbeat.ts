@@ -26,6 +26,7 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { AGENT_API_KEY_ENV, withAgentApiKey } from "./agent-token-env.js";
+import { withHermesPromptTemplate } from "./hermes-prompt.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -2194,6 +2195,7 @@ export function heartbeatService(db: Db) {
         resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
         secretKeys.add(AGENT_API_KEY_ENV);
       }
+      resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);
