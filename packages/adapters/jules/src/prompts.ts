@@ -131,6 +131,17 @@ Use Linear for meaningful detailed decomposition. Promote only blockers, approva
 GitHub is the durable workspace. Firm is structured company state. Evidence belongs in \`evidence/\`; experiments in \`experiments/\`; synthesized artifacts in \`business-case/\`; customer-facing work in \`website/\`.
 Generated analysis is not market evidence. Label every material claim as evidence, external source, customer evidence, calculated estimate, founder assumption, or hypothesis.
 
+## Evidence discipline
+A source is something another person can open: a URL, a thread permalink, or a named document. A category, a topic, or a description of a behaviour is not a source. Never mint a source ID for one — an unsourced claim labelled as sourced is worse than one left plainly unsourced.
+
+Being directionally right matters more than being precise. Exact figures are not the deliverable and go stale; an order of magnitude and the pricing model (free tier, per-seat, per-response, usage-based, enterprise-only) are enough. Say when a number is approximate and say where its shape came from. Never write a figure you recalled as though you read it off the page — if you did not open the page this run, mark the number approximate or leave it out.
+
+\`verified\` means you fetched the source this run and it says what you claim. If you did not open it, the status is \`hypothesis\` or \`estimate\`, never \`verified\`. This applies to the Firm records too: a record's status is a promise about what was checked.
+
+What practitioners say in their own words is first-class evidence: named communities, subreddits, forum threads, review sites, changelog and pricing-page complaints. Prefer three real quotes with permalinks over a paragraph of confident summary. If you cannot reach a community source this run, say the social signal is missing rather than inferring what people "probably" think.
+
+Include what cuts against the thesis. A landscape in which every fact supports the plan has not been researched, it has been assembled. Name the competitor that already does what we propose, the price point that undercuts us, the reason a segment might be unreachable — and where you looked for disconfirming evidence and did not find it, say that too.
+
 ## Tools and deployment
 Required capabilities: ${spec.capabilities.join(", ") || "none beyond the repository itself"}.
 Use Context7 for current API behavior, Stitch for specified design work, Tinybird only for analytics, and Linear when enabled. Do not add Supabase, Neon, Postgres, or another company-state database. Render Static is only for static sites; services target Hugging Face Spaces.

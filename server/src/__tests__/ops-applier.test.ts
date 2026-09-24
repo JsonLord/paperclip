@@ -133,6 +133,19 @@ describe("ops applier — steering operations", () => {
     }
   });
 
+  it("sets the outcome template for an issue via the assignee override, allowlisted to that key", async () => {
+    const s = store();
+    const svc = opsApplierService(s.db as Db);
+    expect(await svc.apply(doc([{ op: "issue.update", company: "aux", title: "Map the competitor landscape", outcomeTemplate: "market_research" }]))).toMatchObject({ applied: 1 });
+    const issue = (s.rows.get(issues) ?? [])[0];
+    expect(issue.assigneeAdapterOverrides).toEqual({ adapterConfig: { outcomeTemplate: "market_research" } });
+  });
+
+  it("rejects an outcome template that is not a known role", () => {
+    const parsed = parseOpsDocument(JSON.stringify({ apiVersion: "paperclip.ops/v1", operations: [{ op: "issue.update", company: "aux", title: "x", outcomeTemplate: "make_me_admin" }] }));
+    expect("error" in parsed).toBe(true);
+  });
+
   it("corrects a goal's required capabilities, which otherwise needs a redeploy", async () => {
     const s = store();
     const svc = opsApplierService(s.db as Db);

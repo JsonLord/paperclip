@@ -21,12 +21,16 @@ describe("what a Jules dispatch is allowed to require", () => {
     expect(requirements.requiredCapabilities).toEqual([]);
   });
 
-  it("still requires the capabilities a worker genuinely needs", () => {
+  it("treats a template's own capabilities as advisory, not as an admission gate", () => {
+    // market_research's library default declares context7, but a worker with no MCP
+    // servers produced a sourced landscape — the template capability must not deny the
+    // dispatch. Only what the operator set on the goal is a hard requirement.
     const requirements = resolveJulesExecutionRequirements(
       { outcomeTemplate: "market_research" },
       { goalSupport: { capabilities: ["firm", "linear"] } },
     );
-    expect(requirements.requiredCapabilities.sort()).toEqual(["context7", "linear"]);
+    expect(requirements.requiredCapabilities).toEqual(["linear"]);
+    expect(requirements.requiredCapabilities).not.toContain("context7");
   });
 
   it("leaves the firm write scope alone — the files are still the contract", () => {

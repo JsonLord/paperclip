@@ -49,10 +49,14 @@ describe("Jules repository leases", () => {
 describe("Jules assignment requirements", () => {
   it("derives capabilities and scopes from the native outcome contract without credentials", () => {
     const requirements = resolveJulesExecutionRequirements({ outcomeTemplate: "commitment", env: { JULES_API_KEY: "must-not-appear" } }, { goalSupport: { capabilities: ["context7"] } });
-    // "firm" is deliberately absent: the CLI cannot be installed where Jules runs, so
-    // requiring it denied every admission. Jules edits firm/*.firm as text instead.
-    expect(requirements.requiredCapabilities).toEqual(["linear", "context7"]);
+    // Only the operator-set goal requirement is a hard admission gate. The commitment
+    // template also declares "linear", but a template capability is advisory now — it
+    // renders in the prompt and never denies a dispatch, so it is absent here.
+    expect(requirements.requiredCapabilities).toEqual(["context7"]);
+    expect(requirements.requiredCapabilities).not.toContain("linear");
+    // "firm" stays out regardless: the CLI cannot exist where Jules runs.
     expect(requirements.requiredCapabilities).not.toContain("firm");
+    // The write scope still merges the template's paths, so the lease covers the writes.
     expect(requirements.writeScopes).toContain("firm/opportunities.firm");
     expect(JSON.stringify(requirements)).not.toContain("must-not-appear");
   });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, approvals, companies, companyJulesSources, goals, heartbeatRuns, instanceSettings, issueComments, issues, julesProfiles, julesProfileSources, julesSessions } from "@paperclipai/db";
+import { JULES_OUTCOME_TEMPLATES } from "@paperclipai/adapter-jules";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { heartbeatService } from "./heartbeat.js";
@@ -73,6 +74,12 @@ const opSchema = z.discriminatedUnion("op", [
     status: z.enum(ISSUE_STATUSES).optional(),
     priority: z.enum(ISSUE_PRIORITIES).optional(),
     assignee: z.string().optional(),
+    // The Jules outcome template this issue runs under. A worker is created with the
+    // generic "bootstrap" template for its whole life; setting it per issue is how a
+    // dispatch gets the role, write scope and acceptance criteria that fit the actual
+    // task, and how two issues on the same worker avoid claiming the same write scope.
+    // Constrained to a known template id — it can only pick a role, never inject config.
+    outcomeTemplate: z.enum(Object.keys(JULES_OUTCOME_TEMPLATES) as [string, ...string[]]).optional(),
   }),
 ]);
 
@@ -207,6 +214,16 @@ export function opsApplierService(db: Db) {
       if (operation.status) patch.status = operation.status;
       if (operation.priority) patch.priority = operation.priority;
       if (assignee) patch.assigneeAgentId = assignee.id;
+      if (operation.outcomeTemplate) {
+        // Merge into the existing per-issue overrides rather than replacing them, and
+        // touch only outcomeTemplate inside adapterConfig — ops never sets env, source,
+        // credentials or any other adapter field.
+        const existing = (issue.assigneeAdapterOverrides ?? {}) as { adapterConfig?: Record<string, unknown> };
+        patch.assigneeAdapterOverrides = {
+          ...existing,
+          adapterConfig: { ...(existing.adapterConfig ?? {}), outcomeTemplate: operation.outcomeTemplate },
+        };
+      }
       await db.update(issues).set(patch).where(and(eq(issues.id, issue.id), eq(issues.companyId, company.id)));
       await wakeAssignee(assignee?.id ?? issue.assigneeAgentId ?? null, issue.id, operation.status ?? issue.status, "update");
       applied += 1;

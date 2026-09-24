@@ -150,8 +150,15 @@ export function resolveJulesExecutionRequirements(config: Record<string, unknown
   const templateId = typeof config.outcomeTemplate === "string" ? config.outcomeTemplate : "";
   const template = JULES_OUTCOME_TEMPLATES[templateId as keyof typeof JULES_OUTCOME_TEMPLATES];
   const support = context.goalSupport && typeof context.goalSupport === "object" ? context.goalSupport as Record<string, unknown> : {};
+  // A template's capability list is a library default that describes what the outcome
+  // can USE, not what a dispatch must be denied for lacking. market_research declares
+  // context7, yet a worker with no MCP servers produced a sourced seven-category
+  // landscape — the enrichment helps, its absence is not a blocker. So the template's
+  // capabilities are advisory and render in the prompt as "use if available"; only what
+  // the operator set on the goal (support.capabilities) or an explicit session spec is
+  // treated as a hard admission requirement.
   return {
-    requiredCapabilities: [...new Set([...strings(sessionSpec?.capabilities), ...strings(template?.capabilities), ...strings(support.capabilities)])].filter((capability) => !NEVER_REQUIRED_OF_JULES.has(capability)),
+    requiredCapabilities: [...new Set([...strings(sessionSpec?.capabilities), ...strings(support.capabilities)])].filter((capability) => !NEVER_REQUIRED_OF_JULES.has(capability)),
     // The lease must cover what the session will actually write, which includes the
     // goal's output paths; leaving them out let two sessions hold overlapping scopes
     // while the broker believed they were disjoint.
