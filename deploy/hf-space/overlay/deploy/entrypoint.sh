@@ -227,6 +227,21 @@ if command -v initdb >/dev/null 2>&1; then
     if [ -n "${DELETE_COMPANY_ID:-}" ]; then
       psql "$DATABASE_URL" -v ON_ERROR_STOP=0 >/dev/null 2>&1 <<SQL
 SET session_replication_role = replica;
+-- The sweep below only reaches tables that HAVE a company_id column, and replica
+-- mode disables the FK cascades that would otherwise catch the rest. Three tables
+-- are company-scoped without carrying the column, so clear them first — while the
+-- rows that identify them still exist. jules_profiles matters most: it has no
+-- company_id and no FK on secret_ref, so a profile left behind points at a deleted
+-- secret and reports "API key not available to this company" for ever.
+DELETE FROM jules_profile_sources WHERE company_source_id IN (
+  SELECT id FROM company_jules_sources WHERE company_id = '${DELETE_COMPANY_ID}');
+DELETE FROM jules_profile_sources WHERE profile_id IN (
+  SELECT id FROM jules_profiles WHERE secret_ref IN (
+    SELECT id::text FROM company_secrets WHERE company_id = '${DELETE_COMPANY_ID}'));
+DELETE FROM jules_profiles WHERE secret_ref IN (
+  SELECT id::text FROM company_secrets WHERE company_id = '${DELETE_COMPANY_ID}');
+DELETE FROM company_secret_versions WHERE secret_id IN (
+  SELECT id FROM company_secrets WHERE company_id = '${DELETE_COMPANY_ID}');
 DO \$do\$ DECLARE t text; BEGIN
   FOR t IN SELECT table_name FROM information_schema.columns WHERE column_name='company_id' AND table_schema='public'
   LOOP EXECUTE format('DELETE FROM public.%I WHERE company_id = %L', t, '${DELETE_COMPANY_ID}'); END LOOP;
