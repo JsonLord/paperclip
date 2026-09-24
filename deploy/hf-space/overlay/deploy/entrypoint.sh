@@ -114,7 +114,7 @@ fi
 if [ -n "${BLABLADOR_TOKEN:-}" ]; then
   : "${FOUNDER_MANAGER_BASE_URL:=https://api.helmholtz-blablador.fz-juelich.de/v1}"
   : "${FOUNDER_MANAGER_API_KEY:=$BLABLADOR_TOKEN}"
-  : "${FOUNDER_MANAGER_MODEL:=alias-fast}"
+  : "${FOUNDER_MANAGER_MODEL:=alias-large}"
   export FOUNDER_MANAGER_BASE_URL FOUNDER_MANAGER_API_KEY FOUNDER_MANAGER_MODEL
   log "founder manager configured (${FOUNDER_MANAGER_MODEL} @ ${FOUNDER_MANAGER_BASE_URL})"
 else
@@ -374,6 +374,12 @@ JSON
         granta="$(mktemp)"
         bash /app/deploy/grant-admins.sh >"$granta" 2>&1 || true
         sed 's/^/[grant-admins] /' "$granta"; rm -f "$granta"
+
+        # An agent's model lives in its adapter_config row, so changing a default
+        # never moves an agent that already exists. Re-apply it every boot.
+        hmodel="$(mktemp)"
+        bash /app/deploy/set-hermes-config.sh >"$hmodel" 2>&1 || true
+        sed 's/^/[hermes-config] /' "$hmodel"; rm -f "$hmodel"
 
         # The disk is ephemeral and a restore can come back without a company at
         # all, so re-establish it from its GitHub repository before Jules binding

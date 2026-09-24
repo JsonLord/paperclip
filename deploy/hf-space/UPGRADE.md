@@ -339,6 +339,41 @@ There is no password-recovery path in this build: better-auth is configured with
 no admin exists. If the admin password is lost, granting a second account through
 this variable is the way back in.
 
+## 6c-ter. Deployment settings for hermes_local agents
+
+An agent's `adapter_config` is written once when the agent is created, so changing a
+deployment default moves only agents created afterwards, and the ephemeral disk keeps
+restoring the old values. The UI exposes no model field for `hermes_local` either — it
+offers "Hermes default" only — so there is no way to change it by hand.
+`deploy/set-hermes-config.sh` re-applies the deployment's choices on every boot.
+
+| Variable | Effect |
+|---|---|
+| `PAPERCLIP_HERMES_MODEL` | Model for all `hermes_local` agents. |
+| `PAPERCLIP_HERMES_WORKDIR` | Working directory for all `hermes_local` agents. |
+| `FOUNDER_MANAGER_MODEL` | Model written into a Founder Manager at bootstrap (default `alias-large`). Only affects newly created agents. |
+
+While a variable is set it is authoritative and re-applied every boot, overwriting a
+value changed elsewhere; unset it to manage that setting per agent. Other
+`adapter_config` keys (`timeoutSec`, `promptTemplate`, `env`, …) are untouched, and
+non-hermes agents are never modified.
+
+**On the working directory.** The adapter takes its cwd from
+`adapter_config.workspaceDir` and falls back to `"."` — whatever directory the server
+process runs in, which in this image is `/app`. Paperclip resolves a workspace of its
+own (`<instance>/workspaces/<agentId>`, or a project workspace) and logs about it, but
+`runtimeForAdapter` carries only session fields and `workspaceDir` is never set, so
+that resolution never reaches the adapter. The effective directory was therefore
+implicit; setting it here makes it explicit. Note that `/app` is the application
+itself — an agent working there can read and modify the running deployment.
+
+**Why `alias-large`.** On `alias-fast` the Founder Manager repeatedly fabricated
+reasons it could not work — claiming a security scanner blocked its API calls when
+hermes-agent's own `check_dangerous_command` approves them, and asking the operator for
+a token it already had. The same task on `alias-large` ran 56 tool calls and reasoned
+correctly. `alias-fast` was adopted only to avoid 429s from the provider; if those
+return, the trade-off is rate limits against a model that invents blockers.
+
 ## 6d-bis. Re-establishing the company from its repository
 
 The disk is ephemeral, so a boot can come up with the company simply absent.
