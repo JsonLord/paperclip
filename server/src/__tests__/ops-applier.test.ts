@@ -184,3 +184,26 @@ describe("ops status snapshot", () => {
     expect(Buffer.from(seen[0].content, "base64").toString("utf8")).toBe("{}");
   });
 });
+
+describe("ops applier — waking the assignee", () => {
+  // The applier writes through drizzle, not the HTTP routes, so it has to wake agents
+  // itself or an issue made actionable from the repo would simply sit there.
+  it("creates a backlog issue without waking anyone", async () => {
+    const s = store();
+    const r = await opsApplierService(s.db as Db).apply(doc([
+      { op: "issue.create", company: "aux", title: "Quiet task", assignee: "Market Analyst", status: "backlog" },
+    ]));
+    expect(r.applied).toBe(1);
+    const created = (s.rows.get(issues) ?? []).find((i) => i.title === "Quiet task");
+    expect(created).toMatchObject({ status: "backlog", assigneeAgentId: "a1" });
+  });
+
+  it("reassigns an issue to another agent, which is how work moves off a blocked worker", async () => {
+    const s = store();
+    const r = await opsApplierService(s.db as Db).apply(doc([
+      { op: "issue.update", company: "aux", title: "Map the competitor landscape", assignee: "Founder Manager", status: "todo" },
+    ]));
+    expect(r.applied).toBe(1);
+    expect((s.rows.get(issues) ?? [])[0]).toMatchObject({ assigneeAgentId: "a2", status: "todo" });
+  });
+});

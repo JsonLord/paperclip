@@ -4,6 +4,7 @@ import type { Db } from "@paperclipai/db";
 import { agents, approvals, companies, goals, heartbeatRuns, instanceSettings, issueComments, issues } from "@paperclipai/db";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
+import { heartbeatService } from "./heartbeat.js";
 
 /**
  * Apply declarative operations committed to a GitHub repository.
@@ -89,6 +90,24 @@ export function parseOpsDocument(raw: string): { doc: OpsDocument } | { error: s
 export const OPS_AUTHOR = "ops-repo";
 
 export function opsApplierService(db: Db) {
+  const heartbeat = heartbeatService(db);
+  /**
+   * Wake an assignee the way the HTTP routes do. The applier writes through drizzle
+   * rather than the routes, so without this an issue made actionable from the ops
+   * repository would sit there until some unrelated event happened to wake the agent.
+   * Backlog never wakes anyone, matching the issue create route.
+   */
+  async function wakeAssignee(agentId: string | null, issueId: string, status: string, mutation: string) {
+    if (!agentId || status === "backlog") return;
+    await heartbeat
+      .wakeup(agentId, {
+        source: "assignment", triggerDetail: "system", reason: "issue_assigned",
+        payload: { issueId, mutation }, requestedByActorType: "user", requestedByActorId: OPS_AUTHOR,
+        contextSnapshot: { issueId, source: `ops.${mutation}` },
+      })
+      .catch((err) => logger.warn({ err, issueId }, "ops: failed to wake assignee"));
+  }
+
   async function resolveCompany(ref: string) {
     const rows = await db.select().from(companies);
     return rows.find((c) => c.id === ref || (c.name ?? "").trim() === ref.trim()) ?? null;
@@ -138,11 +157,12 @@ export function opsApplierService(db: Db) {
         if (operation.goalTitle && !goal) return { applied, skipped, error: `operation ${index}: unknown goal "${operation.goalTitle}"` };
         const assignee = operation.assignee ? await resolveAgent(company.id, operation.assignee) : null;
         if (operation.assignee && !assignee) return { applied, skipped, error: `operation ${index}: unknown agent "${operation.assignee}"` };
-        await db.insert(issues).values({
+        const [created] = await db.insert(issues).values({
           companyId: company.id, title: operation.title, description: operation.description ?? null,
           goalId: goal?.id ?? null, assigneeAgentId: assignee?.id ?? null,
           status: operation.status ?? "backlog", priority: operation.priority ?? "medium",
-        });
+        }).returning();
+        await wakeAssignee(assignee?.id ?? null, created?.id ?? "", operation.status ?? "backlog", "create");
         applied += 1;
         continue;
       }
@@ -181,6 +201,7 @@ export function opsApplierService(db: Db) {
       if (operation.priority) patch.priority = operation.priority;
       if (assignee) patch.assigneeAgentId = assignee.id;
       await db.update(issues).set(patch).where(and(eq(issues.id, issue.id), eq(issues.companyId, company.id)));
+      await wakeAssignee(assignee?.id ?? issue.assigneeAgentId ?? null, issue.id, operation.status ?? issue.status, "update");
       applied += 1;
     }
     return { applied, skipped };
