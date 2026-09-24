@@ -25,6 +25,7 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
+import { AGENT_API_KEY_ENV, withAgentApiKey } from "./agent-token-env.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -2182,6 +2183,17 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      // The adapter contract is that a local-JWT adapter turns ctx.authToken into the
+      // PAPERCLIP_API_KEY the agent authenticates with, but hermes-paperclip-adapter
+      // reads only ctx.agent/ctx.runtime and its settings from ctx.agent.adapterConfig,
+      // so the token is minted and dropped and the agent reports every Paperclip call
+      // as unauthorized. Carry it in the resolved config, which is handed to the
+      // adapter as adapterConfig below, the same way a Jules admission carries
+      // JULES_API_KEY. An explicitly configured key still wins.
+      if (authToken) {
+        resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
+        secretKeys.add(AGENT_API_KEY_ENV);
+      }
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);
@@ -2223,7 +2235,11 @@ export function heartbeatService(db: Db) {
         try {
           adapterResult = await adapter.execute({
             runId: run.id,
-            agent,
+            // adapterConfig is what an adapter reads its settings from, and the
+            // resolved config is that same object with secret bindings replaced by
+            // their values. Handing over the raw one leaves an adapter to receive a
+            // binding object where it expects a string.
+            agent: { ...agent, adapterConfig: resolvedConfig },
             runtime: runtimeForAdapter,
             config: resolvedConfig,
             context,
