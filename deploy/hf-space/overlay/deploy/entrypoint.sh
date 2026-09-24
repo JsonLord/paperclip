@@ -398,6 +398,12 @@ JSON
         bash /app/deploy/seed-jules.sh >"$seedj" 2>&1 || true
         sed 's/^/[seed-jules] /' "$seedj"; rm -f "$seedj"
 
+        # Adapter settings for the Jules workers, after the binding that creates or
+        # repairs them so a freshly resumed agent is configured in the same boot.
+        jcfg="$(mktemp)"
+        bash /app/deploy/set-jules-config.sh >"$jcfg" 2>&1 || true
+        sed 's/^/[jules-config] /' "$jcfg"; rm -f "$jcfg"
+
         # First validation round. Opt-in via FOUNDEROS_ROUND_SEED and idempotent on
         # the round goal's title. Runs after the Jules binding so the workers it
         # queues have a Source to execute against.
