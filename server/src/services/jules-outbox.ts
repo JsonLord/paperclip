@@ -24,21 +24,59 @@ export function validateOutboxEvent(value: unknown, session: typeof julesSession
   return event as FounderOsOutboxEvent;
 }
 
+/** `https://github.com/<owner>/<repo>/pull/<n>` — the only PR URL shape Jules returns. */
+export function parsePullRequestUrl(url: string | null | undefined): { repo: string; number: number } | null {
+  const match = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)(?:[/?#].*)?$/.exec((url ?? "").trim());
+  if (!match) return null;
+  return { repo: match[1], number: Number(match[2]) };
+}
+
 export function createJulesOutboxReconciler(db: Db, options: { fetchImpl?: typeof fetch; githubToken?: string } = {}) {
   const callbacks = julesCallbackService(db);
   const fetchImpl = options.fetchImpl ?? fetch;
   const token = options.githubToken ?? process.env.GITHUB_TOKEN;
   const headers = { accept: "application/vnd.github+json", "user-agent": "paperclip-founderos-outbox", ...(token ? { authorization: `Bearer ${token}` } : {}) };
 
+  /**
+   * The head branch of the session's pull request, or null when it has none yet or the
+   * lookup fails. A failure here must not abort reconciliation: the starting branch is
+   * still worth reading, and a transient GitHub error is not a reason to drop events.
+   */
+  async function pullRequestHeadRef(session: typeof julesSessions.$inferSelect): Promise<string | null> {
+    const parsed = parsePullRequestUrl(session.pullRequestUrl);
+    if (!parsed) return null;
+    try {
+      const response = await fetchImpl(`https://api.github.com/repos/${parsed.repo}/pulls/${parsed.number}`, { headers });
+      if (!response.ok) return null;
+      const pull = await response.json() as { head?: { ref?: string } };
+      return pull.head?.ref?.trim() || null;
+    } catch (error) {
+      logger.warn({ err: error, runId: session.paperclipRunId }, "Jules outbox could not resolve the pull request head");
+      return null;
+    }
+  }
+
   async function reconcileSession(session: typeof julesSessions.$inferSelect) {
     const source = await db.select().from(companyJulesSources).where(eq(companyJulesSources.id, session.companySourceId)).limit(1).then((rows) => rows[0] ?? null);
     if (!source || source.companyId !== session.companyId) throw new Error("Jules source binding is missing or cross-company");
     const namespace = `.founderos/outbox/${session.paperclipRunId}`;
-    const listUrl = `https://api.github.com/repos/${source.repository}/contents/${namespace}?ref=${encodeURIComponent(source.startingBranch)}`;
-    const response = await fetchImpl(listUrl, { headers });
-    if (response.status === 404) return { discovered: 0, applied: 0 };
-    if (!response.ok) throw new Error(`GitHub outbox list failed with HTTP ${response.status}`);
-    const entries = await response.json() as Array<{ name?: string; download_url?: string; type?: string }>;
+    // The outbox carries blockers and approval requests raised WHILE a session runs, and
+    // a session's work lives on its pull request branch: it is told not to merge, so
+    // nothing it writes reaches the starting branch until a human accepts the candidate.
+    // Reading only the starting branch therefore stranded exactly the events that are
+    // worth reading early. Prefer the PR head, and keep the starting branch as the
+    // fallback for a session that has not opened one yet.
+    const refs = [await pullRequestHeadRef(session), source.startingBranch].filter((ref): ref is string => Boolean(ref));
+    let entries: Array<{ name?: string; download_url?: string; type?: string }> | null = null;
+    for (const ref of refs) {
+      const listUrl = `https://api.github.com/repos/${source.repository}/contents/${namespace}?ref=${encodeURIComponent(ref)}`;
+      const response = await fetchImpl(listUrl, { headers });
+      if (response.status === 404) continue;
+      if (!response.ok) throw new Error(`GitHub outbox list failed with HTTP ${response.status}`);
+      entries = await response.json() as Array<{ name?: string; download_url?: string; type?: string }>;
+      break;
+    }
+    if (!entries) return { discovered: 0, applied: 0 };
     let discovered = 0;
     let applied = 0;
     for (const entry of entries) {
