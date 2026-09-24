@@ -11,8 +11,31 @@ import type { Db } from "@paperclipai/db";
  */
 type Row = Record<string, any>;
 
-function equalityPairs(condition: any): Array<{ column: any; value: unknown }> {
-  const pairs: Array<{ column: any; value: unknown }> = [];
+/**
+ * Drizzle renders a comparison as [column, operator, value], with the operator carried
+ * as a string chunk like " >= ". Reading it lets a time-bounded query mean what it says:
+ * treating `gte` as `eq` filtered out every row that was not written at exactly the
+ * boundary instant, which looks like the code failing to find work that is plainly there.
+ */
+const COMPARATORS: Record<string, (left: unknown, right: unknown) => boolean> = {
+  "=": (a, b) => a === b,
+  "<>": (a, b) => a !== b,
+  ">": (a, b) => ordinal(a) > ordinal(b),
+  ">=": (a, b) => ordinal(a) >= ordinal(b),
+  "<": (a, b) => ordinal(a) < ordinal(b),
+  "<=": (a, b) => ordinal(a) <= ordinal(b),
+};
+const ordinal = (value: unknown): number =>
+  value instanceof Date ? value.getTime() : typeof value === "number" ? value : Number(new Date(String(value)));
+
+function operatorOf(chunk: any): string | null {
+  const raw = Array.isArray(chunk?.value) ? chunk.value.join("") : typeof chunk === "string" ? chunk : null;
+  const trimmed = raw?.trim();
+  return trimmed && trimmed in COMPARATORS ? trimmed : null;
+}
+
+function equalityPairs(condition: any): Array<{ column: any; value: unknown; op: string }> {
+  const pairs: Array<{ column: any; value: unknown; op: string }> = [];
   const walk = (node: any) => {
     const chunks: any[] = node?.queryChunks ?? [];
     for (let index = 0; index < chunks.length; index += 1) {
@@ -20,7 +43,12 @@ function equalityPairs(condition: any): Array<{ column: any; value: unknown }> {
       if (chunk?.queryChunks) { walk(chunk); continue; }
       const next = chunks[index + 2];
       const isColumn = chunk && typeof chunk === "object" && "name" in chunk && "table" in chunk;
-      if (isColumn && next && typeof next === "object" && "value" in next && !("queryChunks" in next)) pairs.push({ column: chunk, value: next.value });
+      if (isColumn && next && typeof next === "object" && "value" in next && !("queryChunks" in next) && !Array.isArray(next.value)) {
+        // An operator this fixture does not model degrades to "match everything" rather
+        // than silently behaving like equality and failing in a way that reads as a bug.
+        const op = operatorOf(chunks[index + 1]);
+        if (op) pairs.push({ column: chunk, value: next.value, op });
+      }
     }
   };
   walk(condition);
@@ -30,9 +58,10 @@ function equalityPairs(condition: any): Array<{ column: any; value: unknown }> {
 function matches(table: any, row: Row, condition: any): boolean {
   const pairs = equalityPairs(condition);
   if (!pairs.length) return true;
-  return pairs.every(({ column, value }) => {
+  return pairs.every(({ column, value, op }) => {
     const key = Object.keys(table).find((candidate) => table[candidate] === column);
-    return key === undefined || row[key] === value;
+    if (key === undefined) return true;
+    return COMPARATORS[op](row[key], value);
   });
 }
 

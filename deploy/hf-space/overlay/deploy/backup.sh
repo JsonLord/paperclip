@@ -202,6 +202,30 @@ build_companies() {
     company_json "$d/goals.json"          "select coalesce(json_agg(g),'[]') from goals g where g.company_id='$cid'"
     company_json "$d/goal-templates.json" "select coalesce(json_agg(t),'[]') from goal_template_instances t where t.company_id='$cid'"
     company_json "$d/support-packs.json"  "select coalesce(json_agg(r),'[]') from resource_pack_snapshots r where r.company_id='$cid'"
+
+    # What the agents actually did.
+    #
+    # The restore dump deliberately drops run history, the activity log and the Jules
+    # event tables: a restore does not need them and they grow without bound. The cost
+    # was that every trace of agent behaviour died with the container, so a worker that
+    # had been failing for a day looked identical to one that had never been asked to
+    # do anything. These are the same tables, bounded to a recent tail and kept as
+    # diagnostics rather than as restore payload.
+    mkdir -p "$d/diagnostics"
+    company_json "$d/diagnostics/runs.json" \
+      "select coalesce(json_agg(r order by r.started_at desc),'[]') from (select h.id, a.name as agent, h.status, h.error_code, h.error, h.started_at, h.finished_at, h.context_snapshot from heartbeat_runs h left join agents a on a.id=h.agent_id where h.company_id='$cid' order by h.started_at desc limit 200) r"
+    company_json "$d/diagnostics/run-events.json" \
+      "select coalesce(json_agg(e order by e.created_at desc),'[]') from (select id, run_id, seq, event_type, level, message, payload, created_at from heartbeat_run_events where company_id='$cid' order by created_at desc limit 500) e"
+    company_json "$d/diagnostics/activity.json" \
+      "select coalesce(json_agg(l order by l.created_at desc),'[]') from (select id, actor_type, actor_id, action, entity_type, entity_id, details, created_at from activity_log where company_id='$cid' order by created_at desc limit 300) l"
+    # The only record of what a remote worker said and did. Without it a Jules session
+    # that completed having produced nothing is indistinguishable from one that worked.
+    company_json "$d/diagnostics/jules-activity.json" \
+      "select coalesce(json_agg(x order by x.created_at desc),'[]') from (select sa.id, sa.session_id, sa.activity_id, sa.remote_created_at, sa.payload, sa.created_at from jules_session_activities sa where sa.company_id='$cid' order by sa.created_at desc limit 200) x"
+    company_json "$d/diagnostics/jules-sessions.json" \
+      "select coalesce(json_agg(s order by s.started_at desc),'[]') from (select js.id, a.name as agent, js.jules_session_id, js.status, js.issue_id, js.pull_request_url, js.wait_reason, js.reconciliation_error, js.result_json, js.started_at, js.finished_at from jules_sessions js left join agents a on a.id=js.agent_id where js.company_id='$cid' order by js.started_at desc limit 100) s"
+    company_json "$d/diagnostics/jules-capacity.json" \
+      "select coalesce(json_agg(c order by c.occurred_at desc),'[]') from (select id, profile_id, session_id, event_type, details, occurred_at from jules_capacity_events where company_id='$cid' order by occurred_at desc limit 200) c"
   done < <(psql "$DATABASE_URL" -tAF'|' -c "select id, name from companies" 2>/dev/null)
   log "companies: per-company export done"
 }

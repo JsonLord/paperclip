@@ -325,7 +325,7 @@ export function opsStatusService(db: Db) {
         goals: goalRows.map((g) => ({ title: g.title, level: g.level, status: g.status, owner: agentName.get(g.ownerAgentId ?? "") ?? null })),
         issues: issueRows.map((i) => ({ title: i.title, status: i.status, priority: i.priority, assignee: agentName.get(i.assigneeAgentId ?? "") ?? null, goal: goalTitle.get(i.goalId ?? "") ?? null })),
         approvalsPending: approvalRows.map((a) => ({ type: a.type, requestedBy: agentName.get(a.requestedByAgentId ?? "") ?? null, waitingSince: a.createdAt })),
-        recentRuns: recentRuns.map((r) => ({ agent: agentName.get(r.agentId) ?? null, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, errorCode: r.errorCode ?? null, error: r.error ? String(r.error).slice(0, 200) : null })),
+        recentRuns: recentRuns.map((r) => ({ agent: agentName.get(r.agentId) ?? null, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, errorCode: r.errorCode ?? null, error: r.error ? String(r.error).slice(0, 200) : null, producedWork: (r.resultJson as { producedWork?: boolean } | null)?.producedWork ?? null })),
         jules: await julesState(company.id, agentName),
       });
     }

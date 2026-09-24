@@ -54,6 +54,8 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { goalSupportService } from "./goal-support.js";
+import { runProductivityService } from "./run-productivity.js";
+import { logActivity } from "./activity-log.js";
 import { julesSessionService } from "./jules-sessions.js";
 import { requestJulesReconciliation } from "./jules-reconciler.js";
 import { julesCapacityBroker, resolveJulesExecutionRequirements } from "./jules-capacity-broker.js";
@@ -729,6 +731,7 @@ export function heartbeatService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const goalSupport = goalSupportService(db);
+  const runProductivity = runProductivityService(db);
   const julesLifecycle = julesSessionService(db);
   const julesBroker = julesCapacityBroker(db);
   const budgetHooks = {
@@ -2512,6 +2515,37 @@ export function heartbeatService(db: Db) {
               lastError: outcome === "succeeded" ? null : (adapterResult.errorMessage ?? "run_failed"),
             });
           }
+        }
+      }
+      // An exit code says the adapter process ended cleanly and nothing more. Record
+      // whether anything actually came of the run, so a success that left the assigned
+      // outcome untouched is visible rather than indistinguishable from real work.
+      if (outcome === "succeeded" && finalizedRun) {
+        try {
+          const productivity = await runProductivity.assess({
+            companyId: agent.companyId, agentId: agent.id, runId: finalizedRun.id,
+            issueId, startedAt: finalizedRun.startedAt ?? null,
+          });
+          if (productivity.assessed) {
+            await db.update(heartbeatRuns)
+              .set({ resultJson: { ...(finalizedRun.resultJson ?? {}), producedWork: productivity.produced, productivitySignals: productivity.signals }, updatedAt: new Date() })
+              .where(eq(heartbeatRuns.id, finalizedRun.id));
+            if (!productivity.produced) {
+              await appendRunEvent(finalizedRun, seq++, {
+                eventType: "lifecycle", stream: "system", level: "warn",
+                message: "run succeeded without producing anything for its assigned outcome",
+                payload: { issueId, producedWork: false },
+              });
+              await logActivity(db, {
+                companyId: agent.companyId, actorType: "agent", actorId: agent.id, agentId: agent.id,
+                runId: finalizedRun.id, action: "run.produced_nothing", entityType: "issue", entityId: issueId ?? finalizedRun.id,
+                details: { runId: finalizedRun.id, adapterType: agent.adapterType },
+              });
+            }
+          }
+        } catch (error) {
+          // Never let bookkeeping fail a run that genuinely completed.
+          logger.warn({ err: error, runId: finalizedRun.id }, "run productivity assessment failed");
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
