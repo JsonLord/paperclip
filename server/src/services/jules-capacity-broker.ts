@@ -134,13 +134,24 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
+/**
+ * `firm` is a Paperclip-side build, not something a remote worker can hold.
+ *
+ * The CLI cannot be installed where Jules runs, and Paperclip runs the real build on
+ * its own side after a candidate lands. Nearly every FounderOS goal template declares
+ * `requiredCapabilities: ["firm"]`, which is true of the goal and false of the worker:
+ * left in, it denied every Jules dispatch against a catalog goal with
+ * CAPABILITY_MISSING, permanently and for a reason no profile could ever satisfy.
+ */
+const NEVER_REQUIRED_OF_JULES = new Set(["firm"]);
+
 export function resolveJulesExecutionRequirements(config: Record<string, unknown>, context: Record<string, unknown>) {
   const sessionSpec = config.sessionSpec && typeof config.sessionSpec === "object" ? config.sessionSpec as Partial<JulesSessionSpec> : null;
   const templateId = typeof config.outcomeTemplate === "string" ? config.outcomeTemplate : "";
   const template = JULES_OUTCOME_TEMPLATES[templateId as keyof typeof JULES_OUTCOME_TEMPLATES];
   const support = context.goalSupport && typeof context.goalSupport === "object" ? context.goalSupport as Record<string, unknown> : {};
   return {
-    requiredCapabilities: [...new Set([...strings(sessionSpec?.capabilities), ...strings(template?.capabilities), ...strings(support.capabilities)])],
+    requiredCapabilities: [...new Set([...strings(sessionSpec?.capabilities), ...strings(template?.capabilities), ...strings(support.capabilities)])].filter((capability) => !NEVER_REQUIRED_OF_JULES.has(capability)),
     writeScopes: [...new Set([...strings(sessionSpec?.writeScope), ...strings(template?.writeScope), ...strings(config.writeScopes)])],
   };
 }

@@ -54,6 +54,11 @@ const opSchema = z.discriminatedUnion("op", [
     status: z.enum(["planned", "active", "achieved", "cancelled"]).optional(),
     description: z.string().optional(),
     ownerAgent: z.string().optional(),
+    // A goal that asks for a capability no profile holds denies every dispatch against
+    // it, and until now the only way to correct that was to redeploy the seed script
+    // that set it. It grants nothing: a capability listed here is still checked against
+    // what the profile actually declares.
+    requiredCapabilities: z.array(z.string().min(1)).max(32).optional(),
   }),
   z.object({
     op: z.literal("issue.comment"),
@@ -177,6 +182,7 @@ export function opsApplierService(db: Db) {
         if (operation.status) patch.status = operation.status;
         if (operation.description !== undefined) patch.description = operation.description;
         if (owner) patch.ownerAgentId = owner.id;
+        if (operation.requiredCapabilities) patch.requiredCapabilities = operation.requiredCapabilities;
         await db.update(goals).set(patch).where(and(eq(goals.id, goal.id), eq(goals.companyId, company.id)));
         applied += 1;
         continue;

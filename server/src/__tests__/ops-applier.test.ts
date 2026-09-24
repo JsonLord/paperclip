@@ -133,6 +133,14 @@ describe("ops applier — steering operations", () => {
     }
   });
 
+  it("corrects a goal's required capabilities, which otherwise needs a redeploy", async () => {
+    const s = store();
+    const svc = opsApplierService(s.db as Db);
+    // A goal asking for a capability no profile holds denies every dispatch against it.
+    expect(await svc.apply(doc([{ op: "goal.update", company: "aux", title: "Round 1", requiredCapabilities: ["github"] }]))).toMatchObject({ applied: 1 });
+    expect((s.rows.get(goals) ?? [])[0].requiredCapabilities).toEqual(["github"]);
+  });
+
   it("reports unknown goals and issues rather than creating them", async () => {
     const s = store();
     const svc = opsApplierService(s.db as Db);

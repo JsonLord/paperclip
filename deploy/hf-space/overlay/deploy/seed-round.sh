@@ -116,7 +116,9 @@ json.dump({
   "title": """$ROUND_TITLE""",
   "description": "Define what aux is by what the field already does. Establish a sourced competitor landscape across usability-testing platforms and the synthetic-user entrants moving into the same decision, locate the gaps nobody credibly serves, and restate the idea and ICP hypothesis against them. Ends in one of the market decisions: PROCEED_TO_OFFER_VALIDATION, REFINE_ICP, REFINE_MARKET_SCOPE, GATHER_MORE_MARKET_EVIDENCE, PIVOT_SEGMENT or KILL_MARKET_HYPOTHESIS. No customer contact in this round.",
   "level": "team", "status": "active", "parentId": "$vision_id", "ownerAgentId": "$manager_id",
-  "requiredCapabilities": ["firm", "github"],
+  # "firm" is a Paperclip-side build, not something a remote Jules worker can hold, and
+  # a capability the dispatching profile does not declare denies the run outright.
+  "requiredCapabilities": ["github"],
   "outputPaths": ["business-case/COMPETITOR_LANDSCAPE.md","business-case/OPPORTUNITY_GAPS.md","business-case/MARKET_ANALYSIS.md","business-case/ICP.md","evidence/market/**","firm/**"],
   "acceptanceCriteria": [
     "Every competitor entry carries a source ID and, where priced, a pricing source",

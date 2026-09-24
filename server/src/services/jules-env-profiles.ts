@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { julesProfiles, type Db } from "@paperclipai/db";
 import type { SecretProvider } from "@paperclipai/shared";
 import { SECRET_PROVIDERS } from "@paperclipai/shared";
@@ -23,6 +24,25 @@ export function julesEnvProfileService(db: Db) {
       : "local_encrypted") as SecretProvider;
   }
 
+  /**
+   * What a profile can actually do.
+   *
+   * A profile seeded from the environment declared nothing, and the broker requires
+   * every capability a goal asks for to be listed AND not marked missing — so an empty
+   * list denied every dispatch that asked for anything at all. `github` is always true
+   * of a profile with a bound source: reaching the company repository is the whole
+   * point of the binding. Everything else is an MCP server the operator configures in
+   * their own Jules account, which this deployment cannot verify, so it is declared
+   * here rather than assumed.
+   */
+  function declaredCapabilities(): string[] {
+    const configured = (process.env.JULES_PROFILE_CAPABILITIES ?? "")
+      .split(",")
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+    return [...new Set(["github", ...configured])];
+  }
+
   function envKeys() {
     const found: Array<{ index: number; value: string }> = [];
     for (let index = 1; index <= 8; index += 1) {
@@ -42,6 +62,7 @@ export function julesEnvProfileService(db: Db) {
     // Opt-in: push the current env value as a new version when a key was rotated in the
     // deployment's settings. Off by default so a restart loop does not pile up versions.
     const rotateExisting = /^(1|true|yes)$/i.test(process.env.JULES_SEED_ROTATE ?? "");
+    const capabilities = declaredCapabilities();
     const existingProfiles = await db.select().from(julesProfiles);
     const profileIds: string[] = [];
     let created = 0;
@@ -81,6 +102,14 @@ export function julesEnvProfileService(db: Db) {
       if (already) {
         profileIds.push(already.id);
         reused += 1;
+        // A profile seeded before this deployment declared its capabilities keeps an
+        // empty list forever otherwise, and an empty list denies everything. Widen it
+        // in place; never narrow it, so a capability granted through the API is not
+        // taken away by a restart.
+        const merged = [...new Set([...(already.capabilities ?? []), ...capabilities])];
+        if (merged.length !== (already.capabilities ?? []).length) {
+          await db.update(julesProfiles).set({ capabilities: merged, updatedAt: new Date() }).where(eq(julesProfiles.id, already.id));
+        }
         continue;
       }
 
@@ -97,7 +126,7 @@ export function julesEnvProfileService(db: Db) {
 
       const [profile] = await db
         .insert(julesProfiles)
-        .values({ name: profileName, secretRef: secret.id, sessionStartLimit, sessionStartWindowSec })
+        .values({ name: profileName, secretRef: secret.id, sessionStartLimit, sessionStartWindowSec, capabilities })
         .returning();
       profileIds.push(profile.id);
       created += 1;
