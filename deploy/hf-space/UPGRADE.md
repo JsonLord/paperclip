@@ -351,6 +351,7 @@ offers "Hermes default" only — so there is no way to change it by hand.
 |---|---|
 | `PAPERCLIP_HERMES_MODEL` | Model for all `hermes_local` agents. |
 | `PAPERCLIP_HERMES_WORKDIR` | Working directory for all `hermes_local` agents. |
+| `PAPERCLIP_HERMES_TIMEOUT_SEC` | Seconds before the adapter kills a run (bootstrap writes 900). Whole numbers only; written as a JSON number because the adapter ignores a quoted one. |
 | `FOUNDER_MANAGER_MODEL` | Model written into a Founder Manager at bootstrap (default `alias-large`). Only affects newly created agents. |
 
 While a variable is set it is authoritative and re-applied every boot, overwriting a
