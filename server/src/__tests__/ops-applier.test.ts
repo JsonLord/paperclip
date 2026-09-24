@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Db } from "@paperclipai/db";
-import { agents, companies, goals, issues } from "@paperclipai/db";
-import { opsApplierService, parseOpsDocument } from "../services/ops-applier.js";
+import { agents, approvals, companies, goals, heartbeatRuns, issueComments, issues } from "@paperclipai/db";
+import { OPS_AUTHOR, opsApplierService, opsStatusService, parseOpsDocument, writeStatusFile } from "../services/ops-applier.js";
 import { fakeDb } from "./fixtures/fake-db.js";
 
 function store() {
@@ -13,7 +13,10 @@ function store() {
       { id: "a9", companyId: "c2", name: "Market Analyst" },
     ]],
     [goals, [{ id: "g1", companyId: "c1", title: "Round 1" }]],
-    [issues, [{ id: "i1", companyId: "c1", title: "Map the competitor landscape", status: "todo" }]],
+    [issues, [{ id: "i1", companyId: "c1", title: "Map the competitor landscape", status: "todo", priority: "high", assigneeAgentId: "a1", goalId: "g1" }]],
+    [approvals, [{ id: "ap1", companyId: "c1", type: "outreach", status: "pending", requestedByAgentId: "a1", createdAt: new Date("2026-09-24T09:00:00Z"), payload: { secretish: "do-not-export" } }]],
+    [heartbeatRuns, [{ id: "r1", companyId: "c1", agentId: "a1", status: "succeeded", startedAt: new Date("2026-09-24T10:35:00Z"), finishedAt: new Date("2026-09-24T10:45:00Z"), error: null }]],
+    [issueComments, []],
   ]);
 }
 const doc = (ops: unknown[]) => ({ apiVersion: "paperclip.ops/v1" as const, operations: ops as never });
@@ -99,5 +102,85 @@ describe("ops applier", () => {
     ]));
     expect(result.error).toMatch(/unknown company/);
     expect(result.applied).toBe(0);
+  });
+});
+
+describe("ops applier — steering operations", () => {
+  it("updates a goal status, which is how a round is closed", async () => {
+    const s = store();
+    const r = await opsApplierService(s.db as Db).apply(doc([
+      { op: "goal.update", company: "aux", title: "Round 1", status: "achieved" },
+    ]));
+    expect(r.applied).toBe(1);
+    expect((s.rows.get(goals) ?? [])[0].status).toBe("achieved");
+  });
+
+  it("comments on an issue, attributed to the ops repo rather than an agent", async () => {
+    const s = store();
+    const r = await opsApplierService(s.db as Db).apply(doc([
+      { op: "issue.comment", company: "aux", title: "Map the competitor landscape", body: "Narrow to flow testing only." },
+    ]));
+    expect(r.applied).toBe(1);
+    const comment = (s.rows.get(issueComments) ?? [])[0];
+    expect(comment).toMatchObject({ companyId: "c1", issueId: "i1", authorUserId: OPS_AUTHOR });
+    expect(comment.authorAgentId).toBeUndefined();
+  });
+
+  it("still refuses to approve — the gate must stay human", () => {
+    for (const op of ["approval.approve", "approval.reject", "agent.pause", "secret.set"]) {
+      const parsed = parseOpsDocument(JSON.stringify({ apiVersion: "paperclip.ops/v1", operations: [{ op, company: "aux", title: "x" }] }));
+      expect("error" in parsed).toBe(true);
+    }
+  });
+
+  it("reports unknown goals and issues rather than creating them", async () => {
+    const s = store();
+    const svc = opsApplierService(s.db as Db);
+    expect((await svc.apply(doc([{ op: "goal.update", company: "aux", title: "Nope", status: "active" }]))).error).toMatch(/unknown goal/);
+    expect((await svc.apply(doc([{ op: "issue.comment", company: "aux", title: "Nope", body: "hi" }]))).error).toMatch(/unknown issue/);
+  });
+});
+
+describe("ops status snapshot", () => {
+  it("reports the state an operator needs to steer", async () => {
+    const s = store();
+    const snap = await opsStatusService(s.db as Db).snapshot() as any;
+    const aux = snap.companies.find((c: any) => c.name === "aux");
+    expect(aux.issues[0]).toMatchObject({ title: "Map the competitor landscape", status: "todo", assignee: "Market Analyst", goal: "Round 1" });
+    expect(aux.agents.map((a: any) => a.name)).toContain("Founder Manager");
+    expect(aux.approvalsPending[0]).toMatchObject({ type: "outreach", requestedBy: "Market Analyst" });
+    expect(aux.recentRuns[0]).toMatchObject({ agent: "Market Analyst", status: "succeeded" });
+    expect(snap.generatedAt).toBeTruthy();
+  });
+
+  it("does not export approval payloads or free text", async () => {
+    const s = store();
+    const body = JSON.stringify(await opsStatusService(s.db as Db).snapshot());
+    expect(body).not.toContain("do-not-export");
+    expect(body).not.toContain("payload");
+    expect(body).not.toContain("description");
+  });
+
+  it("skips the commit when the snapshot is unchanged", async () => {
+    const body = '{"a":1}';
+    const calls: string[] = [];
+    const fake = (async (url: any, init: any = {}) => {
+      calls.push(`${init.method ?? "GET"} ${String(url)}`);
+      return { ok: true, json: async () => ({ sha: "s1", content: Buffer.from(body, "utf8").toString("base64") }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    expect(await writeStatusFile("o/r", "status/state.json", "t", body, fake)).toBe("unchanged");
+    expect(calls.filter((c) => c.startsWith("PUT"))).toHaveLength(0);
+  });
+
+  it("creates the file when it does not exist yet", async () => {
+    const seen: any[] = [];
+    const fake = (async (_url: any, init: any = {}) => {
+      if ((init.method ?? "GET") === "GET") return { ok: false, json: async () => ({}) } as unknown as Response;
+      seen.push(JSON.parse(init.body));
+      return { ok: true, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    expect(await writeStatusFile("o/r", "status/state.json", "t", "{}", fake)).toBe("created");
+    expect(seen[0].sha).toBeUndefined();
+    expect(Buffer.from(seen[0].content, "base64").toString("utf8")).toBe("{}");
   });
 });

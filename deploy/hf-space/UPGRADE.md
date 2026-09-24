@@ -473,10 +473,30 @@ restarting. `startOpsApplier` polls a GitHub repository instead: a change is a c
 | `PAPERCLIP_OPS_PATH` | Directory to read (default `ops`). |
 | `PAPERCLIP_OPS_INTERVAL_MS` | Poll interval, floor 60s (default 300s). |
 
-A document is `apiVersion: paperclip.ops/v1` with an `operations` array. Three
-operations exist and nothing else parses: `goal.create`, `issue.create` and
-`issue.update`. Companies, agents and goals are referenced by name and resolved
-**within the named company**, so two companies may both have a "Market Analyst".
+A document is `apiVersion: paperclip.ops/v1` with an `operations` array. Five
+operations exist and nothing else parses: `goal.create`, `goal.update`,
+`issue.create`, `issue.update` and `issue.comment`. Companies, agents and goals are
+referenced by name and resolved **within the named company**, so two companies may
+both have a "Market Analyst". A comment is attributed to `ops-repo`, not to an agent —
+the audit trail should show a human steering.
+
+### Reading state back
+
+| Variable | Effect |
+|---|---|
+| `PAPERCLIP_OPS_STATUS_PATH` | Where the snapshot is committed (default `status/state.json`). |
+
+Every cycle the poller commits a snapshot of each company — agents and their status,
+goals, issues with assignee and goal, pending approvals, and the last 20 runs — so an
+operator outside the deployment can see current state instead of reasoning from a
+backup dump up to a day old. It is republished whether or not a document applied,
+because a stale snapshot is worse than none, and skipped when the content has not
+changed.
+
+Only structural fields are exported. Descriptions, comment bodies and approval
+payloads are left out: the snapshot says what state the company is in, not what is in
+it. The file is a read-only mirror — editing it changes nothing and is overwritten on
+the next cycle.
 
 ```json
 {"apiVersion":"paperclip.ops/v1","operations":[
@@ -496,6 +516,13 @@ skipped rather than re-read every tick.
 move issues between statuses. Keep it private and restrict who can push. The allowlist
 is deliberately narrow: no secrets, no adapter configuration, no agent creation, no
 deletions — anything destructive stays a deliberate human action through the UI.
+
+**Approvals are deliberately absent.** `POST /approvals/:id/approve` exists, but the
+approval gate's purpose is to require a human. Putting approve/reject behind a
+repository that an automated operator can push to would let that operator approve its
+own agents' requests, and the governance invariant becomes decorative. Approvals stay
+in the UI. The snapshot reports what is waiting so an operator can say so; it cannot
+decide.
 
 ## 7. Known limitation
 

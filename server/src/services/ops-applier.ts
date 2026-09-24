@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, companies, goals, instanceSettings, issues } from "@paperclipai/db";
+import { agents, approvals, companies, goals, heartbeatRuns, instanceSettings, issueComments, issues } from "@paperclipai/db";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 
@@ -46,6 +46,20 @@ const opSchema = z.discriminatedUnion("op", [
     priority: z.enum(ISSUE_PRIORITIES).optional(),
   }),
   z.object({
+    op: z.literal("goal.update"),
+    company: z.string().min(1),
+    title: z.string().min(1),
+    status: z.enum(["planned", "active", "achieved", "cancelled"]).optional(),
+    description: z.string().optional(),
+    ownerAgent: z.string().optional(),
+  }),
+  z.object({
+    op: z.literal("issue.comment"),
+    company: z.string().min(1),
+    title: z.string().min(1),
+    body: z.string().min(1).max(8000),
+  }),
+  z.object({
     op: z.literal("issue.update"),
     company: z.string().min(1),
     title: z.string().min(1),
@@ -70,6 +84,9 @@ export function parseOpsDocument(raw: string): { doc: OpsDocument } | { error: s
   if (!parsed.success) return { error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ").slice(0, 300) };
   return { doc: parsed.data };
 }
+
+/** Author recorded on comments applied from the ops repository. */
+export const OPS_AUTHOR = "ops-repo";
 
 export function opsApplierService(db: Db) {
   async function resolveCompany(ref: string) {
@@ -130,6 +147,30 @@ export function opsApplierService(db: Db) {
         continue;
       }
 
+      if (operation.op === "goal.update") {
+        const goal = await resolveGoal(company.id, operation.title);
+        if (!goal) return { applied, skipped, error: `operation ${index}: unknown goal "${operation.title}"` };
+        const owner = operation.ownerAgent ? await resolveAgent(company.id, operation.ownerAgent) : null;
+        if (operation.ownerAgent && !owner) return { applied, skipped, error: `operation ${index}: unknown agent "${operation.ownerAgent}"` };
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (operation.status) patch.status = operation.status;
+        if (operation.description !== undefined) patch.description = operation.description;
+        if (owner) patch.ownerAgentId = owner.id;
+        await db.update(goals).set(patch).where(and(eq(goals.id, goal.id), eq(goals.companyId, company.id)));
+        applied += 1;
+        continue;
+      }
+
+      if (operation.op === "issue.comment") {
+        const target = await resolveIssue(company.id, operation.title);
+        if (!target) return { applied, skipped, error: `operation ${index}: unknown issue "${operation.title}"` };
+        // Attributed to the operator, not to an agent: a comment arriving through the
+        // ops repository is a human steering the work, and the audit trail should say so.
+        await db.insert(issueComments).values({ companyId: company.id, issueId: target.id, authorUserId: OPS_AUTHOR, body: operation.body });
+        applied += 1;
+        continue;
+      }
+
       // issue.update
       const issue = await resolveIssue(company.id, operation.title);
       if (!issue) return { applied, skipped, error: `operation ${index}: unknown issue "${operation.title}"` };
@@ -161,6 +202,70 @@ export function opsApplierService(db: Db) {
   return { apply, readState, writeState, resolveCompany };
 }
 
+/**
+ * Build the status snapshot written back to the ops repository each cycle.
+ *
+ * This is the read half of the loop: an operator steering from outside has no board
+ * session, so without it they would be acting on a backup dump up to a day old.
+ *
+ * Only structural fields are exported. Descriptions and comment bodies are left out —
+ * they are free text that can accumulate anything, and the snapshot's job is to say
+ * what state the company is in, not to mirror its contents. Approval payloads are
+ * summarised to their type and age: enough to see that a decision is waiting and how
+ * long it has waited, without copying what is being approved.
+ */
+export function opsStatusService(db: Db) {
+  async function snapshot(): Promise<Record<string, unknown>> {
+    const companyRows = await db.select().from(companies);
+    const out: Array<Record<string, unknown>> = [];
+    for (const company of companyRows) {
+      const [agentRows, goalRows, issueRows, approvalRows, runRows] = await Promise.all([
+        db.select().from(agents).where(eq(agents.companyId, company.id)),
+        db.select().from(goals).where(eq(goals.companyId, company.id)),
+        db.select().from(issues).where(eq(issues.companyId, company.id)),
+        db.select().from(approvals).where(and(eq(approvals.companyId, company.id), eq(approvals.status, "pending"))),
+        db.select().from(heartbeatRuns).where(eq(heartbeatRuns.companyId, company.id)),
+      ]);
+      const agentName = new Map(agentRows.map((a) => [a.id, a.name]));
+      const goalTitle = new Map(goalRows.map((g) => [g.id, g.title]));
+      const recentRuns = [...runRows]
+        .sort((a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime())
+        .slice(0, 20);
+      out.push({
+        id: company.id,
+        name: company.name,
+        repository: company.firmGithubRepo ?? null,
+        agents: agentRows.map((a) => ({ name: a.name, adapter: a.adapterType, status: a.status, pauseReason: a.pauseReason ?? null })),
+        goals: goalRows.map((g) => ({ title: g.title, level: g.level, status: g.status, owner: agentName.get(g.ownerAgentId ?? "") ?? null })),
+        issues: issueRows.map((i) => ({ title: i.title, status: i.status, priority: i.priority, assignee: agentName.get(i.assigneeAgentId ?? "") ?? null, goal: goalTitle.get(i.goalId ?? "") ?? null })),
+        approvalsPending: approvalRows.map((a) => ({ type: a.type, requestedBy: agentName.get(a.requestedByAgentId ?? "") ?? null, waitingSince: a.createdAt })),
+        recentRuns: recentRuns.map((r) => ({ agent: agentName.get(r.agentId) ?? null, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, error: r.error ? String(r.error).slice(0, 200) : null })),
+      });
+    }
+    return { generatedAt: new Date().toISOString(), note: "Written by the Space each ops cycle. Read-only mirror; edit nothing here.", companies: out };
+  }
+  return { snapshot };
+}
+
+/** Commit the snapshot, creating or updating it. No-op when the content is unchanged. */
+export async function writeStatusFile(repo: string, path: string, token: string, body: string, fetchImpl = fetch): Promise<"created" | "updated" | "unchanged" | "failed"> {
+  const base = process.env.GITHUB_API_URL ?? "https://api.github.com";
+  const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "paperclip-ops-applier", "content-type": "application/json" };
+  const existing = await fetchImpl(`${base}/repos/${repo}/contents/${path}`, { headers });
+  let sha: string | undefined;
+  if (existing.ok) {
+    const meta = (await existing.json()) as { sha?: string; content?: string };
+    sha = meta.sha;
+    if (meta.content && Buffer.from(meta.content, "base64").toString("utf8") === body) return "unchanged";
+  }
+  const response = await fetchImpl(`${base}/repos/${repo}/contents/${path}`, {
+    method: "PUT", headers,
+    body: JSON.stringify({ message: "ops: status snapshot", content: Buffer.from(body, "utf8").toString("base64"), ...(sha ? { sha } : {}) }),
+  });
+  if (!response.ok) return "failed";
+  return sha ? "updated" : "created";
+}
+
 interface OpsFile { path: string; sha: string; content: string }
 
 /** Fetch every .json under the configured path at the repository's default branch. */
@@ -189,6 +294,7 @@ export function startOpsApplier(db: Db): void {
   if (!repo || !token) return;
   const path = process.env.PAPERCLIP_OPS_PATH?.trim() || "ops";
   const intervalMs = Math.max(60_000, Number(process.env.PAPERCLIP_OPS_INTERVAL_MS) || 300_000);
+  const statusPath = process.env.PAPERCLIP_OPS_STATUS_PATH?.trim() || "status/state.json";
   const svc = opsApplierService(db);
 
   const tick = async () => {
@@ -217,8 +323,22 @@ export function startOpsApplier(db: Db): void {
     if (changed) await svc.writeState(state);
   };
 
-  const run = () => { void tick().catch((err) => logger.error({ err }, "ops: apply cycle failed")) };
+  const status = opsStatusService(db);
+  const publishStatus = async () => {
+    // The snapshot is what an operator reads before deciding anything, so a stale one
+    // is worse than none: it is republished every cycle regardless of whether any
+    // document applied.
+    const body = `${JSON.stringify(await status.snapshot(), null, 2)}\n`;
+    const result = await writeStatusFile(repo, statusPath, token, body);
+    if (result === "failed") logger.warn({ repo, path: statusPath }, "ops: status snapshot could not be written");
+  };
+
+  const run = () => {
+    void tick()
+      .catch((err) => logger.error({ err }, "ops: apply cycle failed"))
+      .finally(() => { void publishStatus().catch((err) => logger.error({ err }, "ops: status publish failed")) });
+  };
   setTimeout(run, 20_000);
   opsTimer = setInterval(run, intervalMs);
-  logger.info({ repo, path, intervalMs }, "ops applier started");
+  logger.info({ repo, path, statusPath, intervalMs }, "ops applier started");
 }
