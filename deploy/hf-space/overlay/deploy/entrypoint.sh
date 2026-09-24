@@ -326,6 +326,13 @@ JSON
         goals="$(psql "$DATABASE_URL" -tAc "select count(*) from goal_template_instances" 2>/dev/null | tr -d '[:space:]')"
         [ -n "$goals" ] && log "founderos: ${goals} instantiated goal templates"
 
+        # Extra operator accounts, re-applied every boot. seed-admin.sh only runs
+        # when the instance has no admin at all, so a grant made by hand would be
+        # lost to the next restore from a dump that predates it.
+        granta="$(mktemp)"
+        bash /app/deploy/grant-admins.sh >"$granta" 2>&1 || true
+        sed 's/^/[grant-admins] /' "$granta"; rm -f "$granta"
+
         # The disk is ephemeral and a restore can come back without a company at
         # all, so re-establish it from its GitHub repository before Jules binding
         # runs — the import resolves the Jules Source itself. Opt-in via

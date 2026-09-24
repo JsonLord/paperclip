@@ -316,6 +316,29 @@ The rebind endpoint exists for that state. Binding a repository by hand is still
 possible where the Jules-side source id is already known:
 `POST /api/companies/<id>/jules-sources {repository, source, profileIds}`.
 
+## 6c-bis. Extra instance admins
+
+`seed-admin.sh` runs only when the instance has no admin at all, so a second operator
+account granted by hand is lost to the next restore from a dump that predates the
+grant. `deploy/grant-admins.sh` re-applies the grant on every boot instead.
+
+| Variable | Effect |
+|---|---|
+| `PAPERCLIP_ADMIN_EMAILS` | Comma- or space-separated addresses granted `instance_admin` each boot. Unset disables the step. |
+
+It grants only to an account that **already exists** — it never creates a user and
+never touches passwords, so a typo is reported rather than silently provisioning an
+admin. Matching is case-insensitive and the grant is idempotent.
+
+Security note: whoever can set this variable can make themselves an instance admin.
+On a Space that is the owner, who already controls `GITHUB_TOKEN` and
+`PAPERCLIP_ADMIN_PASSWORD`, so it grants no privilege they did not already have.
+
+There is no password-recovery path in this build: better-auth is configured without
+`sendResetPassword`, and `paperclipai auth bootstrap-ceo` only mints an invite while
+no admin exists. If the admin password is lost, granting a second account through
+this variable is the way back in.
+
 ## 6d-bis. Re-establishing the company from its repository
 
 The disk is ephemeral, so a boot can come up with the company simply absent.
