@@ -57,16 +57,16 @@ export function createJulesReconciler(db: Db, options: JulesReconcilerOptions = 
    * Once-only is enforced by the capacity event's (session, type) unique index, which
    * survives the restart that the in-memory alternative would not.
    *
-   * The plan is the worker's own statement of how it will do work it was already
-   * assigned. It is not an external action, and approving it weakens none of the gates
-   * that matter: external actions still require approval, the worker still cannot merge
-   * its own pull request, and a COMPLETED session is still only a completion candidate.
-   * Set JULES_REQUIRE_HUMAN_PLAN_APPROVAL to hold it for a person instead — which now
-   * leaves a trail rather than silence.
+   * The default is to record and hold, not to approve. Approving on the deployment's
+   * behalf would remove a gate a person put there, and the one session observed so far
+   * left AWAITING_PLAN_APPROVAL on its own within minutes — so a deadlock is a risk this
+   * guards against, not a behaviour that has been seen. Recording it is what was missing.
+   * JULES_AUTO_APPROVE_PLAN opts in to approving, for a deployment that has decided the
+   * plan is internal work planning rather than a decision it wants to make.
    */
   async function settlePlanApproval(session: typeof julesSessions.$inferSelect) {
     if (session.status !== "AWAITING_PLAN_APPROVAL") return;
-    const holdForHuman = /^(1|true|yes)$/i.test(process.env.JULES_REQUIRE_HUMAN_PLAN_APPROVAL ?? "");
+    const holdForHuman = !/^(1|true|yes)$/i.test(process.env.JULES_AUTO_APPROVE_PLAN ?? "");
     const eventType = holdForHuman ? "plan_awaiting_human" : "plan_approved";
     const [claimed] = await db.insert(julesCapacityEvents)
       .values({ profileId: session.profileId, companyId: session.companyId, sessionId: session.id, eventType, details: { julesSessionId: session.julesSessionId } })
