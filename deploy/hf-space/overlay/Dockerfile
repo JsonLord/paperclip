@@ -71,6 +71,22 @@ RUN apt-get update \
   && (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash || pipx install --global hermes-agent) \
   && pipx install --global openviking==0.4.6
 
+# Firm CLI. Every FounderOS goal contract ends in "firm build passes" and the server
+# shells out to `firm` (services/firm-cli.ts, FIRM_CLI_PATH or PATH), so without it the
+# firm half of the model cannot be built or validated. Prebuilt release binary — no
+# Rust toolchain in the image. The checksum is verified because this is an unpinned
+# "latest" URL; update FIRM_SHA256 when bumping, and the build fails loudly on a
+# mismatch rather than shipping something unexpected.
+ARG FIRM_SHA256=2ef50f7bcc16916feef2e16391a0d07ddf52e6664d79191ed5827a1db3fa8caa
+RUN set -eux; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL -o "$tmp/firm.tar.gz" https://github.com/42futures/firm/releases/latest/download/firm-linux-amd64.tar.gz; \
+    echo "${FIRM_SHA256}  $tmp/firm.tar.gz" | sha256sum -c -; \
+    tar -xzf "$tmp/firm.tar.gz" -C "$tmp"; \
+    install -m 0755 "$tmp/firm" /usr/local/bin/firm; \
+    rm -rf "$tmp"; \
+    firm --version
+
 # Baked-in HOME for the hermes_local subprocess (see docker/hermes-home)
 COPY docker/hermes-home /opt/hermes-home
 RUN chown -R node:node /opt/hermes-home

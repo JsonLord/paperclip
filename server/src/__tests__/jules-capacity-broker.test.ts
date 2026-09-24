@@ -49,7 +49,10 @@ describe("Jules repository leases", () => {
 describe("Jules assignment requirements", () => {
   it("derives capabilities and scopes from the native outcome contract without credentials", () => {
     const requirements = resolveJulesExecutionRequirements({ outcomeTemplate: "commitment", env: { JULES_API_KEY: "must-not-appear" } }, { goalSupport: { capabilities: ["context7"] } });
-    expect(requirements.requiredCapabilities).toEqual(["firm", "linear", "context7"]);
+    // "firm" is deliberately absent: the CLI cannot be installed where Jules runs, so
+    // requiring it denied every admission. Jules edits firm/*.firm as text instead.
+    expect(requirements.requiredCapabilities).toEqual(["linear", "context7"]);
+    expect(requirements.requiredCapabilities).not.toContain("firm");
     expect(requirements.writeScopes).toContain("firm/opportunities.firm");
     expect(JSON.stringify(requirements)).not.toContain("must-not-appear");
   });
