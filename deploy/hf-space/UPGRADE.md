@@ -461,6 +461,42 @@ promotes it to `todo`, which is what dispatches the next worker.
 Re-running is safe: the round goal's title is the guard, so a restart does not
 re-queue the round.
 
+## 6g. Changing the company from git, without a restart
+
+The mutating API needs a board session, which an operator outside the deployment does
+not have, and the alternative was baking every change into the boot script and
+restarting. `startOpsApplier` polls a GitHub repository instead: a change is a commit.
+
+| Variable | Effect |
+|---|---|
+| `PAPERCLIP_OPS_REPO` | `owner/name` holding the ops documents. Unset disables the poller. |
+| `PAPERCLIP_OPS_PATH` | Directory to read (default `ops`). |
+| `PAPERCLIP_OPS_INTERVAL_MS` | Poll interval, floor 60s (default 300s). |
+
+A document is `apiVersion: paperclip.ops/v1` with an `operations` array. Three
+operations exist and nothing else parses: `goal.create`, `issue.create` and
+`issue.update`. Companies, agents and goals are referenced by name and resolved
+**within the named company**, so two companies may both have a "Market Analyst".
+
+```json
+{"apiVersion":"paperclip.ops/v1","operations":[
+  {"op":"issue.update","company":"aux","title":"Map the competitor landscape for journey/flow decisions","status":"done"},
+  {"op":"issue.update","company":"aux","title":"Position the laya capability against the landscape","status":"todo"}
+]}
+```
+
+Applied file shas are recorded in `instance_settings.experimental.opsApplied`, so each
+version is applied once; editing a file applies it again, and the per-operation
+existence checks stop that duplicating anything. A document that fails mid-way is left
+unrecorded and retried on the next tick — operations before the failure have already
+been applied, so write them to be safe to repeat. A malformed document is recorded and
+skipped rather than re-read every tick.
+
+**Security.** Whoever can push to the ops repository can create goals and issues and
+move issues between statuses. Keep it private and restrict who can push. The allowlist
+is deliberately narrow: no secrets, no adapter configuration, no agent creation, no
+deletions — anything destructive stays a deliberate human action through the UI.
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under

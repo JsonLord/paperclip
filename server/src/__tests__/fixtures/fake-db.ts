@@ -57,6 +57,9 @@ export function fakeDb(seed: Array<[unknown, Row[]]> = []) {
   const db: any = {
     select,
     transaction: (fn: any) => fn(db),
+    // Raw SQL is opaque to this fake; callers that fall back to it get an empty result
+    // rather than a crash, which keeps a code path under test that only needs to survive it.
+    execute: async () => ({ rows: [] }),
     insert: (table: unknown) => ({
       values: (value: any) => {
         const made = (Array.isArray(value) ? value : [value]).map((v) => ({ id: v.id ?? `id-${++id}`, ...v }));
