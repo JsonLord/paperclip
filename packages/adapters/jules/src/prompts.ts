@@ -18,6 +18,13 @@ export interface JulesSessionSpec {
   acceptanceCriteria: string[];
   cannotCompleteIf: string[];
   externalActions: ExternalActionPolicy;
+  /**
+   * The Paperclip issue this session was dispatched for. The outcome template alone says
+   * what kind of work the role does; without this the worker only ever receives the
+   * template's generic objective and has no way to learn which issue it was woken for,
+   * because it runs on Google's infrastructure and holds no Paperclip credential.
+   */
+  assignment?: { title: string; description?: string; priority?: string; goal?: string };
   managerNotes?: string;
   support?: {
     skills: string[];
@@ -92,7 +99,17 @@ The role does not expand authority beyond this outcome contract.
 
 ## Objective
 ${spec.objective}
+${spec.assignment ? `
+## Assigned outcome
+This session was dispatched for a specific Paperclip issue. It is the work; the objective
+above is only the shape of it.
 
+- Title: ${spec.assignment.title}
+- Priority: ${spec.assignment.priority ?? "unspecified"}
+- Goal: ${spec.assignment.goal ?? "none"}
+
+${spec.assignment.description?.trim() || "No description was supplied. Work from the title, the goal, and the repository state."}
+` : ""}
 ## Inputs
 ${bullets(spec.inputs)}
 
@@ -115,7 +132,7 @@ GitHub is the durable workspace. Firm is structured company state. Evidence belo
 Generated analysis is not market evidence. Label every material claim as evidence, external source, customer evidence, calculated estimate, founder assumption, or hypothesis.
 
 ## Tools and deployment
-Required capabilities: ${spec.capabilities.join(", ") || "firm"}.
+Required capabilities: ${spec.capabilities.join(", ") || "none beyond the repository itself"}.
 Use Context7 for current API behavior, Stitch for specified design work, Tinybird only for analytics, and Linear when enabled. Do not add Supabase, Neon, Postgres, or another company-state database. Render Static is only for static sites; services target Hugging Face Spaces.
 
 ## Goal-specific support
@@ -134,7 +151,8 @@ Do not merge your own PR and do not mark your own outcome accepted.
 
 ## Completion protocol
 1. Inspect the actual artifacts and run relevant tests.
-2. Run \`firm build\` after changes; completion is forbidden if it fails.
+2. Do not run \`firm build\`: that CLI is not installed here. Re-read every \`firm/*.firm\`
+   file you edited and confirm each record still matches the shapes in \`firm/schemas/\`.
 3. Verify every required output and acceptance criterion.
 4. Identify unresolved requirements and check Git history for secrets.
 5. Submit an idempotent completion candidate to Paperclip with the PR URL and artifact paths.

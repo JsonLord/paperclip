@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  goals,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -990,6 +991,9 @@ export function heartbeatService(db: Db) {
             projectId: issues.projectId,
             goalId: issues.goalId,
             projectWorkspaceId: issues.projectWorkspaceId,
+            title: issues.title,
+            description: issues.description,
+            priority: issues.priority,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
@@ -999,6 +1003,25 @@ export function heartbeatService(db: Db) {
     if (supportGoalId) {
       const support = await goalSupport.resolve(supportGoalId);
       if (support?.companyId === agent.companyId) context.goalSupport = support.resolution;
+    }
+    // A remote adapter has no Paperclip credential and cannot read the issue it was woken
+    // for, so the assignment has to travel with the run. Local adapters already receive it
+    // through the API; carrying it here costs one column each on a query already made.
+    if (issueProjectRef?.title) {
+      const goalRow = supportGoalId
+        ? await db
+            .select({ title: goals.title })
+            .from(goals)
+            .where(and(eq(goals.id, supportGoalId), eq(goals.companyId, agent.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      context.assignment = {
+        issueId,
+        title: issueProjectRef.title,
+        description: issueProjectRef.description ?? null,
+        priority: issueProjectRef.priority ?? null,
+        goal: goalRow?.title ?? null,
+      };
     }
     const issueProjectId = issueProjectRef?.projectId ?? null;
     const preferredProjectWorkspaceId =

@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, goals, heartbeatRuns, instanceSettings, issueComments, issues } from "@paperclipai/db";
+import { agents, approvals, companies, companyJulesSources, goals, heartbeatRuns, instanceSettings, issueComments, issues, julesProfiles, julesProfileSources, julesSessions } from "@paperclipai/db";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "@paperclipai/shared";
 import { logger } from "../middleware/logger.js";
 import { heartbeatService } from "./heartbeat.js";
+import { secretService } from "./secrets.js";
 
 /**
  * Apply declarative operations committed to a GitHub repository.
@@ -236,6 +237,64 @@ export function opsApplierService(db: Db) {
  * long it has waited, without copying what is being approved.
  */
 export function opsStatusService(db: Db) {
+  const secrets = secretService(db);
+
+  /**
+   * Why Jules state is exported at all.
+   *
+   * A Jules dispatch that is refused never reaches the remote service, and the refusal
+   * is recorded in `heartbeat_runs` and `jules_capacity_events` — both of which the
+   * backup deliberately drops, so a container restart erases every trace of why ten
+   * remote workers are sitting idle. `jules_sessions` and the binding tables do survive,
+   * and together they answer the only questions worth asking from outside: is a source
+   * bound, does a profile hold a credential this company can actually read, and has a
+   * remote session ever been created.
+   *
+   * Credentials are reported as readable or not. The value never leaves the deployment.
+   */
+  async function julesState(companyId: string, agentName: Map<string, string | null>) {
+    const [sourceRows, profileRows, mappingRows, sessionRows] = await Promise.all([
+      db.select().from(companyJulesSources).where(eq(companyJulesSources.companyId, companyId)),
+      db.select().from(julesProfiles),
+      db.select().from(julesProfileSources),
+      db.select().from(julesSessions).where(eq(julesSessions.companyId, companyId)),
+    ]);
+    const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
+    const sources = [];
+    for (const source of sourceRows) {
+      const bound = mappingRows.filter((mapping) => mapping.companySourceId === source.id);
+      const profiles = [];
+      for (const mapping of bound) {
+        const profile = profileById.get(mapping.profileId);
+        if (!profile) continue;
+        const credential = await secrets
+          .resolveSecretValue(companyId, profile.secretRef, "latest")
+          .then(() => "readable" as const)
+          .catch(() => "unreadable" as const);
+        profiles.push({
+          name: profile.name, status: profile.status, enabled: profile.enabled, mappingStatus: mapping.status,
+          credential, capabilities: profile.capabilities ?? [],
+          capabilityReadiness: Object.fromEntries(Object.entries(profile.capabilityReadiness ?? {}).map(([key, value]) => [key, value?.status ?? "configured"])),
+        });
+      }
+      sources.push({
+        repository: source.repository, source: source.source, startingBranch: source.startingBranch,
+        enabled: source.enabled, requiredCapabilities: source.requiredCapabilities ?? [], profiles,
+      });
+    }
+    const recentSessions = [...sessionRows]
+      .sort((a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime())
+      .slice(0, 20)
+      .map((session) => ({
+        agent: agentName.get(session.agentId) ?? null, status: session.status,
+        julesSessionId: session.julesSessionId, pullRequestUrl: session.pullRequestUrl ?? null,
+        completionCandidate: session.completionCandidate, waitReason: session.waitReason ?? null,
+        reconciliationError: session.reconciliationError ? String(session.reconciliationError).slice(0, 200) : null,
+        startedAt: session.startedAt, finishedAt: session.finishedAt,
+      }));
+    return { sources, sessionCount: sessionRows.length, recentSessions };
+  }
+
   async function snapshot(): Promise<Record<string, unknown>> {
     const companyRows = await db.select().from(companies);
     const out: Array<Record<string, unknown>> = [];
@@ -260,7 +319,8 @@ export function opsStatusService(db: Db) {
         goals: goalRows.map((g) => ({ title: g.title, level: g.level, status: g.status, owner: agentName.get(g.ownerAgentId ?? "") ?? null })),
         issues: issueRows.map((i) => ({ title: i.title, status: i.status, priority: i.priority, assignee: agentName.get(i.assigneeAgentId ?? "") ?? null, goal: goalTitle.get(i.goalId ?? "") ?? null })),
         approvalsPending: approvalRows.map((a) => ({ type: a.type, requestedBy: agentName.get(a.requestedByAgentId ?? "") ?? null, waitingSince: a.createdAt })),
-        recentRuns: recentRuns.map((r) => ({ agent: agentName.get(r.agentId) ?? null, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, error: r.error ? String(r.error).slice(0, 200) : null })),
+        recentRuns: recentRuns.map((r) => ({ agent: agentName.get(r.agentId) ?? null, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, errorCode: r.errorCode ?? null, error: r.error ? String(r.error).slice(0, 200) : null })),
+        jules: await julesState(company.id, agentName),
       });
     }
     return { generatedAt: new Date().toISOString(), note: "Written by the Space each ops cycle. Read-only mirror; edit nothing here.", companies: out };

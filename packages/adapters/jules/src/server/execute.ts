@@ -25,6 +25,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     return { exitCode: 1, signal: null, timedOut: false, errorCode: "jules_required_support_missing", errorMessage: `Required goal support is unavailable: ${missingRequiredPacks.join(", ")}`, resultJson: { missingRequiredPacks, completionCandidate: false, accepted: false } };
   }
   const unique = (...groups: string[][]): string[] => [...new Set(groups.flat())];
+  // Every FounderOS worker is configured with one outcome template for its whole life, so
+  // the template says what kind of work the role does and nothing about which issue woke
+  // it. Jules runs on Google's infrastructure with no Paperclip credential, so it cannot
+  // look the issue up either: unless the assignment travels in the prompt, the worker
+  // receives the template's generic objective for every task it is ever given.
+  const assignmentRaw = ctx.context.assignment && typeof ctx.context.assignment === "object"
+    ? ctx.context.assignment as Record<string, unknown>
+    : null;
+  const assignmentTitle = asString(assignmentRaw?.title, "").trim();
+  const assignment = assignmentTitle
+    ? {
+        title: assignmentTitle,
+        description: asString(assignmentRaw?.description, "").trim() || undefined,
+        priority: asString(assignmentRaw?.priority, "").trim() || undefined,
+        goal: asString(assignmentRaw?.goal, "").trim() || undefined,
+      }
+    : undefined;
   const generatedSpec = outcomeTemplate ? createJulesSessionSpec({
     company: { id: ctx.agent.companyId, name: asString(ctx.config.companyName, "Company"), repository },
     paperclip: { runId: ctx.runId, agentId: ctx.agent.id, projectId: asString(ctx.context.projectId, "") || undefined, goalId: asString(ctx.context.goalId, "") || undefined, outcomeId: asString(ctx.context.issueId, asString(ctx.context.taskId, "")) || undefined },
@@ -32,7 +49,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     capabilities: unique([...outcomeTemplate.capabilities], supportStrings("capabilities")), writeScope: [...outcomeTemplate.writeScope], linear: { mode: "NONE" },
     objective: asString(ctx.config.objective, outcomeTemplate.objective), inputs: unique(Array.isArray(ctx.config.inputs) ? ctx.config.inputs.filter((item): item is string => typeof item === "string") : [], supportStrings("inputPaths")),
     requiredOutputs: unique([...outcomeTemplate.requiredOutputs], supportStrings("outputPaths")), acceptanceCriteria: unique([...outcomeTemplate.acceptanceCriteria], supportStrings("acceptanceCriteria")), cannotCompleteIf: unique([...outcomeTemplate.cannotCompleteIf], supportStrings("cannotCompleteIf")),
-    externalActions: "APPROVAL_REQUIRED", managerNotes: asString(ctx.config.managerNotes, ""),
+    externalActions: "APPROVAL_REQUIRED", assignment, managerNotes: asString(ctx.config.managerNotes, ""),
     support: {
       skills: supportStrings("skills"),
       packs: supportPacks,
@@ -60,7 +77,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       source,
       startingBranch,
       requirePlanApproval,
-      title: outcomeTemplate?.title ?? (asString(ctx.config.title, "") || undefined),
+      title: assignmentTitle || outcomeTemplate?.title || (asString(ctx.config.title, "") || undefined),
     });
     if (!session.id) throw new Error("Jules create-session response did not contain an id");
     await ctx.onMeta?.({ adapterType: "jules", command: "Jules session created", context: { julesSession: { id: session.id, profileId: asString(ctx.config.profileId, ""), companySourceId: asString(ctx.config.companySourceId, ""), repository, source, startingBranch } } });
