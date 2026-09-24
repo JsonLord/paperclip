@@ -65,6 +65,13 @@ dump_sha() {
   sha256sum < "$file" | awk '{print $1}'
 }
 
+# Count the rows in any of a dump's `COPY public.<table>` blocks.
+dump_rows() {
+  local file="$1" table="$2"
+  [ -s "$file" ] || { echo 0; return 0; }
+  awk -v tbl="COPY public.${table} " 'index($0,tbl)==1{f=1;next} f&&/^\\\.$/{exit} f{c++} END{print c+0}' "$file" 2>/dev/null || echo 0
+}
+
 # Count the rows in a plain pg_dump's `COPY public.companies` block. Reported in the
 # log so a refusal says what was at stake.
 dump_company_count() {
@@ -116,18 +123,37 @@ build_companies() {
   prior_sha="$(dump_sha "$wd/db/paperclip.sql")"
   restored_sha="$(cat "$HOME/.paperclip-backup-baseline" 2>/dev/null | tr -d '[:space:]')"
 
+  # A differing dump does NOT by itself mean the repo holds newer work. The shutdown
+  # backup races the next boot, so the repo routinely moves just after a container
+  # restores — with an OLDER dump. Refusing on any difference wedged a container for
+  # its whole life: one did 45 minutes of agent work and published none of it.
+  #
+  # Refuse only when this database is strictly poorer than the repo's dump on EVERY
+  # axis, which is what a genuinely stale restore looks like. A container that has
+  # more of anything has work the repo does not, and must be allowed to publish.
   if [ -n "$prior_sha" ] && [ "$prior_sha" != "$restored_sha" ] && [ -z "$(backup_forced)" ]; then
     if [ -z "$restored_sha" ] && [ -n "${PAPERCLIP_BACKUP_STALE:-}" ]; then
       # This boot deliberately did not restore (no dump yet, or the wrong migration
       # lineage). Publishing is how the repo gets a usable dump at all.
       log "companies: publishing over an unrestored dump (this boot could not use it)"
     else
-      log "companies: REFUSING to publish — the backup repo moved since this boot restored"
-      [ -n "$restored_sha" ] || log "companies: this boot has no recorded baseline (it did not restore a dump)"
-      log "companies: repo dump ${prior_sha:0:12} (${prior_count} company/companies), this boot restored ${restored_sha:0:12}"
-      log "companies: another container published after this one started; set PAPERCLIP_BACKUP_FORCE=1 to overwrite it anyway"
-      rm -f "$prior_saved"
-      return 1
+      local live_co live_goals live_issues repo_goals repo_issues
+      live_co="$(psql "$DATABASE_URL" -qtAc 'select count(*) from companies' 2>/dev/null | tr -d '[:space:]')"
+      live_goals="$(psql "$DATABASE_URL" -qtAc 'select count(*) from goals' 2>/dev/null | tr -d '[:space:]')"
+      live_issues="$(psql "$DATABASE_URL" -qtAc 'select count(*) from issues' 2>/dev/null | tr -d '[:space:]')"
+      repo_goals="$(dump_rows "$prior_saved" goals)"
+      repo_issues="$(dump_rows "$prior_saved" issues)"
+      if [ "${live_co:-0}" -lt "$prior_count" ] \
+         && [ "${live_goals:-0}" -lt "${repo_goals:-0}" ] \
+         && [ "${live_issues:-0}" -lt "${repo_issues:-0}" ]; then
+        log "companies: REFUSING to publish — this database is poorer than the backup on every axis"
+        log "companies: live ${live_co}/${live_goals}/${live_issues} vs repo ${prior_count}/${repo_goals}/${repo_issues} (companies/goals/issues)"
+        log "companies: this looks like a stale restore; set PAPERCLIP_BACKUP_FORCE=1 to overwrite it anyway"
+        rm -f "$prior_saved"
+        return 1
+      fi
+      log "companies: repo moved since this boot restored, but this database is not strictly poorer — publishing"
+      log "companies: live ${live_co}/${live_goals}/${live_issues} vs repo ${prior_count}/${repo_goals}/${repo_issues} (companies/goals/issues)"
     fi
   fi
 

@@ -438,6 +438,21 @@ JSON
   done
 ) &
 
+# Periodic backup. Daily-plus-shutdown means everything since the last daily run rides
+# on the shutdown backup succeeding, and a shutdown backup can be refused — a container
+# once did 45 minutes of agent work and published none of it. This bounds the loss to
+# one interval. Set PAPERCLIP_BACKUP_INTERVAL_MIN=0 to disable.
+: "${PAPERCLIP_BACKUP_INTERVAL_MIN:=15}"
+if [ "${PAPERCLIP_BACKUP_INTERVAL_MIN}" -gt 0 ] 2>/dev/null; then
+  (
+    while :; do
+      sleep $((PAPERCLIP_BACKUP_INTERVAL_MIN * 60))
+      bash /app/deploy/backup.sh 2>&1 | sed 's/^/[periodic-backup] /' || log "periodic backup failed"
+    done
+  ) &
+  log "periodic backup every ${PAPERCLIP_BACKUP_INTERVAL_MIN}m"
+fi
+
 # Keep PID 1 tied to paperclip; if it exits, the container exits.
 wait "$APP_PID"
 log "paperclip exited — stopping sidecars + postgres"

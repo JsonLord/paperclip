@@ -417,11 +417,13 @@ answers the question the count was standing in for.
 | Situation | Result |
 |---|---|
 | Repo holds the dump this boot restored | Publish |
-| Repo holds something else | Refuse, repo untouched |
+| Repo holds something else, and this database is poorer on companies AND goals AND issues | Refuse, repo untouched |
+| Repo holds something else, but this database has more of anything | Publish |
 | Repo empty | Publish |
 | No baseline, boot could not restore (`PAPERCLIP_BACKUP_STALE`) | Publish — this is how the repo gets a usable dump |
 | No baseline, no such reason | Refuse |
 | `PAPERCLIP_BACKUP_FORCE=1` (or the older `PAPERCLIP_BACKUP_ALLOW_SHRINK=1`) | Publish regardless |
+| `PAPERCLIP_BACKUP_INTERVAL_MIN` | Periodic backup cadence in minutes (default 15, 0 disables). |
 
 A failed `pg_dump` publishes nothing and leaves the repo's dump in place: the `>`
 redirect truncates the file before the failure is known, so the previous behaviour
