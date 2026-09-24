@@ -152,7 +152,10 @@ export function resolveJulesExecutionRequirements(config: Record<string, unknown
   const support = context.goalSupport && typeof context.goalSupport === "object" ? context.goalSupport as Record<string, unknown> : {};
   return {
     requiredCapabilities: [...new Set([...strings(sessionSpec?.capabilities), ...strings(template?.capabilities), ...strings(support.capabilities)])].filter((capability) => !NEVER_REQUIRED_OF_JULES.has(capability)),
-    writeScopes: [...new Set([...strings(sessionSpec?.writeScope), ...strings(template?.writeScope), ...strings(config.writeScopes)])],
+    // The lease must cover what the session will actually write, which includes the
+    // goal's output paths; leaving them out let two sessions hold overlapping scopes
+    // while the broker believed they were disjoint.
+    writeScopes: [...new Set([...strings(sessionSpec?.writeScope), ...strings(template?.writeScope), ...strings(config.writeScopes), ...strings(support.writeScope), ...strings(support.outputPaths)])],
   };
 }
 

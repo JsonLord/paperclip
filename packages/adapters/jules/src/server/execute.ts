@@ -46,7 +46,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     company: { id: ctx.agent.companyId, name: asString(ctx.config.companyName, "Company"), repository },
     paperclip: { runId: ctx.runId, agentId: ctx.agent.id, projectId: asString(ctx.context.projectId, "") || undefined, goalId: asString(ctx.context.goalId, "") || undefined, outcomeId: asString(ctx.context.issueId, asString(ctx.context.taskId, "")) || undefined },
     role: outcomeTemplate.role, execution: { source, startingBranch, requirePlanApproval: !asBoolean(ctx.config.autoApprovePlan, false) },
-    capabilities: unique([...outcomeTemplate.capabilities], supportStrings("capabilities")), writeScope: [...outcomeTemplate.writeScope], linear: { mode: "NONE" },
+    capabilities: unique([...outcomeTemplate.capabilities], supportStrings("capabilities")),
+    // A required output that is not writable is a contract no worker can satisfy. The
+    // goal's output paths were unioned into requiredOutputs but not into writeScope, so
+    // a session was told to produce business-case/MARKET_ANALYSIS.md and, four sections
+    // later, to write only within the bootstrap template's paths — which exclude it. The
+    // compliant response is to do nothing and finish, which is what happened.
+    writeScope: unique([...outcomeTemplate.writeScope], supportStrings("writeScope"), supportStrings("outputPaths")),
+    linear: { mode: "NONE" },
     objective: asString(ctx.config.objective, outcomeTemplate.objective), inputs: unique(Array.isArray(ctx.config.inputs) ? ctx.config.inputs.filter((item): item is string => typeof item === "string") : [], supportStrings("inputPaths")),
     requiredOutputs: unique([...outcomeTemplate.requiredOutputs], supportStrings("outputPaths")), acceptanceCriteria: unique([...outcomeTemplate.acceptanceCriteria], supportStrings("acceptanceCriteria")), cannotCompleteIf: unique([...outcomeTemplate.cannotCompleteIf], supportStrings("cannotCompleteIf")),
     externalActions: "APPROVAL_REQUIRED", assignment, managerNotes: asString(ctx.config.managerNotes, ""),
