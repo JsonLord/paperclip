@@ -64,23 +64,39 @@ api() { # api METHOD PATH
 # Target companies: JULES_SEED_COMPANY (id or exact name), else every company that
 # has a bound GitHub repository — a rebind is a no-op for one already bound.
 [ "$(api GET /api/companies)" = "200" ] || { log "could not list companies — skipping"; exit 0; }
+cp "$tmp/out.json" "$tmp/companies.json"
 mapfile -t targets < <(JSC="${JULES_SEED_COMPANY:-}" python3 -c '
 import json,os,sys
 companies=json.load(open(sys.argv[1]))
 want=os.environ.get("JSC","").strip()
 if want:
-    rows=[c for c in companies if c["id"]==want or c.get("name")==want]
+    rows=[c for c in companies if c["id"]==want or (c.get("name") or "").strip()==want]
 else:
     rows=[c for c in companies if c.get("firmGithubRepo")]
 for c in rows:
     print("%s\t%s" % (c["id"], c.get("name") or c["id"]))
-' "$tmp/out.json" 2>/dev/null)
+' "$tmp/companies.json" 2>/dev/null)
 
 if [ "${#targets[@]}" -eq 0 ]; then
-  log "no company with a bound GitHub repository — set JULES_SEED_COMPANY to a company id or name; skipping"
+  # Say which of the two reasons applies and show what was actually there, so the
+  # fix does not need a second boot to diagnose.
+  known="$(python3 -c '
+import json,sys
+try: companies=json.load(open(sys.argv[1]))
+except Exception: print("<unreadable>"); raise SystemExit
+if not companies: print("<none>"); raise SystemExit
+print("; ".join("%s (%s) repo=%s" % (c.get("name") or "?", c["id"], c.get("firmGithubRepo") or "-") for c in companies[:10]))
+' "$tmp/companies.json" 2>/dev/null)"
+  if [ -n "${JULES_SEED_COMPANY:-}" ]; then
+    log "JULES_SEED_COMPANY='${JULES_SEED_COMPANY}' matched no company id or name — it must be one of: $known"
+    log "note: it is a company id or name, not a repository"
+  else
+    log "no company has a bound GitHub repository — import one, or set JULES_SEED_COMPANY. Known companies: $known"
+  fi
   exit 0
 fi
 
+log "rebinding ${#targets[@]} company/companies"
 for target in "${targets[@]}"; do
   IFS=$'\t' read -r company_id company_name <<< "$target"
   status="$(api POST "/api/companies/$company_id/founderos/rebind-jules-source")"
