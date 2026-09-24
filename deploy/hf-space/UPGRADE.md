@@ -316,6 +316,24 @@ The rebind endpoint exists for that state. Binding a repository by hand is still
 possible where the Jules-side source id is already known:
 `POST /api/companies/<id>/jules-sources {repository, source, profileIds}`.
 
+## 6e. Backups never shrink the company set
+
+`backup.sh` runs on shutdown as well as daily, and a shutdown backup races the next
+boot's restore: the outgoing container pushes ~10s *after* the new one has already
+restored. A boot therefore restores the state from two boots ago, and a container
+that came up on a stale dump would publish its own smaller state back over the good
+one — leaving the Space alternating between two states forever.
+
+The dump step now counts the rows in the repo's existing `COPY public.companies`
+block and refuses to publish fewer than that, restoring the repo's dump and skipping
+the per-company export instead. A failed `pg_dump` does the same, because the `>`
+redirect has already truncated the file by the time the failure is known. Set
+`PAPERCLIP_BACKUP_ALLOW_SHRINK=1` to publish a genuinely smaller set (after deleting
+a company on purpose).
+
+Nothing is lost when the guard trips — the refused state is still in the running
+database, and every earlier dump is in the backup repo's git history.
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under

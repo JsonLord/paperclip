@@ -39,6 +39,14 @@ build_openviking() {
   printf '{"component":"openviking","backed_up":"%s"}\n' "$(date -uIseconds)" > "$wd/BACKUP_INFO.json"
 }
 
+# Count the rows in a plain pg_dump's `COPY public.companies` block. Used to refuse a
+# backup that would publish fewer companies than the repo already holds.
+dump_company_count() {
+  local file="$1"
+  [ -s "$file" ] || { echo 0; return 0; }
+  awk '/^COPY public\.companies /{f=1;next} f&&/^\\\.$/{exit} f{c++} END{print c+0}' "$file" 2>/dev/null || echo 0
+}
+
 # Dump one query into a file, tolerating a table that does not exist yet (a company
 # restored from an older schema, or a migration that has not run).
 company_json() {
@@ -70,6 +78,14 @@ build_companies() {
   # jules_profile_sources, company_jules_sources, jules_sessions, goals,
   # goal_template_instances, resource_pack_snapshots) are deliberately NOT excluded;
   # only their append-only event/activity logs are.
+  # A shutdown backup races the next boot's restore: a container that restored a stale
+  # dump would otherwise publish its own smaller state over a good one, and the Space
+  # alternates between the two forever. Refuse to shrink the company set unless asked.
+  local prior_count prior_saved
+  prior_count="$(dump_company_count "$wd/db/paperclip.sql")"
+  prior_saved=""
+  if [ -s "$wd/db/paperclip.sql" ]; then prior_saved="$(mktemp)"; cp "$wd/db/paperclip.sql" "$prior_saved"; fi
+
   if pg_dump --no-owner --no-privileges \
        --exclude-table-data='heartbeat_runs' \
        --exclude-table-data='workspace_operations' \
@@ -83,7 +99,24 @@ build_companies() {
     log "companies: pg_dump ok ($(wc -c < "$wd/db/paperclip.sql") bytes)"
   else
     log "companies: pg_dump failed"
+    # The redirect already truncated the file; put the repo's dump back and publish
+    # nothing this run, rather than an empty dump or JSON from a DB we just failed to
+    # read.
+    [ -n "$prior_saved" ] && cp "$prior_saved" "$wd/db/paperclip.sql"
+    rm -f "$prior_saved"
+    return 1
   fi
+
+  local new_count; new_count="$(dump_company_count "$wd/db/paperclip.sql")"
+  if [ "$new_count" -lt "$prior_count" ] && [ -n "$prior_saved" ] \
+     && [ -z "${PAPERCLIP_BACKUP_ALLOW_SHRINK:-}" ]; then
+    log "companies: REFUSING to publish $new_count company/companies over the $prior_count already backed up"
+    log "companies: this DB is probably a stale restore; set PAPERCLIP_BACKUP_ALLOW_SHRINK=1 to override"
+    cp "$prior_saved" "$wd/db/paperclip.sql"
+    rm -f "$prior_saved"
+    return 1
+  fi
+  rm -f "$prior_saved"
   # Per-company folders (human-identifiable): companies/<name-slug>-<id8>/
   rm -rf "$wd"/companies/* 2>/dev/null
   while IFS='|' read -r cid cname; do
