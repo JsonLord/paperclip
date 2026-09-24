@@ -389,12 +389,6 @@ JSON
         bash /app/deploy/seed-company.sh >"$seedc" 2>&1 || true
         sed 's/^/[seed-company] /' "$seedc"; rm -f "$seedc"
 
-        # First validation round. Opt-in via FOUNDEROS_ROUND_SEED and idempotent on
-        # the round goal's title. Runs after the Jules binding so the workers it
-        # queues have a Source to execute against.
-        seedr="$(mktemp)"
-        bash /app/deploy/seed-round.sh >"$seedr" 2>&1 || true
-        sed 's/^/[seed-round] /' "$seedr"; rm -f "$seedr"
 
         # Jules profiles reference Paperclip-stored secrets by UUID, so the
         # JULES_API_* Space secrets have to be imported before a profile can exist.
@@ -403,6 +397,13 @@ JSON
         seedj="$(mktemp)"
         bash /app/deploy/seed-jules.sh >"$seedj" 2>&1 || true
         sed 's/^/[seed-jules] /' "$seedj"; rm -f "$seedj"
+
+        # First validation round. Opt-in via FOUNDEROS_ROUND_SEED and idempotent on
+        # the round goal's title. Runs after the Jules binding so the workers it
+        # queues have a Source to execute against.
+        seedr="$(mktemp)"
+        bash /app/deploy/seed-round.sh >"$seedr" 2>&1 || true
+        sed 's/^/[seed-round] /' "$seedr"; rm -f "$seedr"
 
         # When this boot could not restore (no dump yet, or one from the old
         # migration lineage), the repo holds nothing this build can read back. Waiting
