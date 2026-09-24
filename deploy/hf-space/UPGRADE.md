@@ -316,6 +316,27 @@ The rebind endpoint exists for that state. Binding a repository by hand is still
 possible where the Jules-side source id is already known:
 `POST /api/companies/<id>/jules-sources {repository, source, profileIds}`.
 
+## 6d-bis. Re-establishing the company from its repository
+
+The disk is ephemeral, so a boot can come up with the company simply absent.
+`deploy/seed-company.sh` imports it back from GitHub before the Jules binding runs
+(the import resolves the Jules Source itself). It is strictly opt-in and idempotent:
+nothing happens unless `FOUNDEROS_IMPORT_REPO` is set, and nothing happens when a
+company is already bound to that repository — matched case-insensitively, so it will
+not duplicate one.
+
+| Variable | Effect |
+|---|---|
+| `FOUNDEROS_IMPORT_REPO` | The company repository, `owner/name`. Unset disables the step entirely. |
+| `FOUNDEROS_IMPORT_NAME` | Company name to import under. Defaults to the repository's last path segment, so set it when `JULES_SEED_COMPANY` expects a different name. |
+| `FOUNDEROS_IMPORT_COMMIT` | Pin the FounderOS context commit. Defaults to the head of `FOUNDEROS_CONTENT_REPO` (`JsonLord/FounderOS-DEMO`). |
+
+Caveat: the step reacts to the company being *absent*, and an import always creates a
+new company id with a new bootstrap pull request. It restores the ability to work,
+not the previous company's history — a boot that lost data and re-imports starts that
+company over. Recovering the original rows instead means restoring the dump from the
+backup repo's git history.
+
 ## 6e. Backups never shrink the company set
 
 `backup.sh` runs on shutdown as well as daily, and a shutdown backup races the next

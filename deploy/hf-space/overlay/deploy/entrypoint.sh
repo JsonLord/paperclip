@@ -326,6 +326,14 @@ JSON
         goals="$(psql "$DATABASE_URL" -tAc "select count(*) from goal_template_instances" 2>/dev/null | tr -d '[:space:]')"
         [ -n "$goals" ] && log "founderos: ${goals} instantiated goal templates"
 
+        # The disk is ephemeral and a restore can come back without a company at
+        # all, so re-establish it from its GitHub repository before Jules binding
+        # runs — the import resolves the Jules Source itself. Opt-in via
+        # FOUNDEROS_IMPORT_REPO, and a no-op once a company is bound to that repo.
+        seedc="$(mktemp)"
+        bash /app/deploy/seed-company.sh >"$seedc" 2>&1 || true
+        sed 's/^/[seed-company] /' "$seedc"; rm -f "$seedc"
+
         # Jules profiles reference Paperclip-stored secrets by UUID, so the
         # JULES_API_* Space secrets have to be imported before a profile can exist.
         # Re-run every boot: the disk is ephemeral, so a hand-made profile does not
