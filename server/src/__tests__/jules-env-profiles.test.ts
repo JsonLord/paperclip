@@ -1,43 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "@paperclipai/db";
-import { companySecrets, julesProfiles } from "@paperclipai/db";
+import { companySecretVersions, companySecrets, julesProfiles } from "@paperclipai/db";
 import { julesEnvProfileService } from "../services/jules-env-profiles.js";
+import { fakeDb } from "./fixtures/fake-db.js";
 
-function fakeDb() {
-  const rows = new Map<unknown, any[]>();
-  let id = 0;
-  const select = () => {
-    let selected: any[] = [];
-    const q: any = {
-      from: (t: unknown) => { selected = rows.get(t) ?? []; return q; },
-      where: () => q, limit: () => q, orderBy: () => q,
-      then: (ok: any, bad: any) => Promise.resolve(selected).then(ok, bad),
-    };
-    return q;
-  };
-  const db: any = {
-    select,
-    transaction: (fn: any) => fn(db),
-    insert: (table: unknown) => ({
-      values: (value: any) => {
-        const vals = Array.isArray(value) ? value : [value];
-        const made = vals.map((v) => ({ id: v.id ?? `id-${++id}`, ...v }));
-        const target = rows.get(table) ?? [];
-        rows.set(table, target);
-        const op: any = {
-          onConflictDoNothing: () => op, onConflictDoUpdate: () => op,
-          returning: async () => { target.push(...made); return made; },
-          then: (ok: any) => Promise.resolve(target.push(...made)).then(ok),
-        };
-        return op;
-      },
-    }),
-    update: () => ({ set: () => ({ where: () => ({ returning: async () => [], then: (ok: any) => Promise.resolve(undefined).then(ok) }) }) }),
-  };
-  return { db: db as Db, rows };
-}
-
-const ENV = ["JULES_API_1", "JULES_API_2", "JULES_SESSION_START_LIMIT"] as const;
+const ENV = ["JULES_API_1", "JULES_API_2", "JULES_SESSION_START_LIMIT", "JULES_SEED_ROTATE"] as const;
 const saved = Object.fromEntries(ENV.map((k) => [k, process.env[k]]));
 afterEach(() => {
   for (const k of ENV) {
@@ -65,11 +32,7 @@ describe("jules env profiles", () => {
     expect(result.profileIds).toHaveLength(2);
 
     const secrets = store.rows.get(companySecrets) ?? [];
-    // Secret *count* is not asserted: the fake `where()` is a no-op, so getByName
-    // matches the first row regardless of name and the second key reuses it. The
-    // real store filters on (companyId, name). What matters here is that secrets
-    // are created for this company and never hold the raw key in plaintext.
-    expect(secrets.length).toBeGreaterThan(0);
+    expect(secrets.map((s) => s.name).sort()).toEqual(["jules-api-1", "jules-api-2"]);
     expect(secrets.every((s) => s.companyId === "company-1")).toBe(true);
     expect(JSON.stringify(secrets)).not.toContain("key-one");
     expect(JSON.stringify(secrets)).not.toContain("key-two");
@@ -104,8 +67,40 @@ describe("jules env profiles", () => {
     await svc.ensureForCompany("company-2");
     const profiles = store.rows.get(julesProfiles) ?? [];
     expect(profiles.map((p) => p.name).sort()).toEqual(["jules-company-1-1", "jules-company-2-1"]);
-    // secretRef uniqueness is not asserted here: the fake `where()` is a no-op, so
-    // getByName cannot scope by company. The real store filters on companyId.
+    // Each company gets its own secret, so the two profiles can never resolve to one key.
+    expect(new Set(profiles.map((p) => p.secretRef)).size).toBe(2);
+  });
+
+  it("adopts a profile that already points at this company's key, whatever it is named", async () => {
+    process.env.JULES_API_1 = "key-one";
+    delete process.env.JULES_API_2;
+    const store = fakeDb();
+    const svc = julesEnvProfileService(store.db);
+    const first = await svc.ensureForCompany("company-1");
+    // An earlier deployment named profiles after a truncated company id.
+    (store.rows.get(julesProfiles) ?? [])[0].name = "jules-company-1";
+    const second = await svc.ensureForCompany("company-1");
+    expect(second).toMatchObject({ created: 0, reused: 1 });
+    expect(second.profileIds).toEqual(first.profileIds);
+    expect(store.rows.get(julesProfiles) ?? []).toHaveLength(1);
+  });
+
+  it("rotates an existing key only when asked to", async () => {
+    process.env.JULES_API_1 = "key-one";
+    delete process.env.JULES_API_2;
+    const store = fakeDb();
+    const svc = julesEnvProfileService(store.db);
+    await svc.ensureForCompany("company-1");
+    const versions = () => (store.rows.get(companySecretVersions) ?? []).length;
+    const afterCreate = versions();
+
+    delete process.env.JULES_SEED_ROTATE;
+    expect(await svc.ensureForCompany("company-1")).toMatchObject({ rotated: 0 });
+    expect(versions()).toBe(afterCreate);
+
+    process.env.JULES_SEED_ROTATE = "true";
+    expect(await svc.ensureForCompany("company-1")).toMatchObject({ rotated: 1, created: 0, reused: 1 });
+    expect(versions()).toBeGreaterThan(afterCreate);
   });
 
   it("honours a configured session start limit", async () => {

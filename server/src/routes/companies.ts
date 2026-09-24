@@ -17,6 +17,7 @@ import {
   companyPortabilityService,
   companyService,
   founderOsBootstrapService,
+  founderOsRebindService,
   julesEnvProfileService,
   persistedJulesSourceResolver,
   heartbeatService,
@@ -142,6 +143,28 @@ export function companyRoutes(db: Db) {
     }});
     const result = await bootstrap.bootstrap(company.id, repo);
     res.status(201).json({ company, ...result });
+  });
+
+  // Jules profiles can only be created against a company, but bootstrap resolves the Jules
+  // Source once and is idempotent afterwards. A company imported before its profiles existed
+  // therefore keeps every worker paused; this repairs it in place rather than re-importing,
+  // which would only create a duplicate company.
+  router.post("/:companyId/founderos/rebind-jules-source", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(req.actor.source === "local_implicit" || req.actor.isInstanceAdmin)) throw forbidden("Instance admin required");
+    await julesEnvProfileService(db).ensureForCompany(companyId, { userId: req.actor.userId ?? "system" });
+    const resolver = persistedJulesSourceResolver(db, companyId, (apiKey) => new JulesApiClient("https://jules.googleapis.com/v1alpha", apiKey));
+    const result = await founderOsRebindService(db, { sourceResolver: resolver }).rebindJulesSource(companyId);
+    if (result.rebound) {
+      const heartbeat = heartbeatService(db);
+      for (const issueId of (result as { unblockedIssueIds?: string[] }).unblockedIssueIds ?? []) {
+        const issue = await db.select().from(issues).where(eq(issues.id, issueId)).limit(1).then((rows) => rows[0]);
+        if (issue?.assigneeAgentId) await heartbeat.invoke(issue.assigneeAgentId, "assignment", { issueId, goalId: issue.goalId, projectId: issue.projectId, source: "founderos_rebind" }, "system", { actorType: "system", actorId: "founderos-rebind" });
+      }
+    }
+    res.status(result.rebound ? 200 : 409).json(result);
   });
 
   router.post("/", validate(createCompanySchema), async (req, res) => {

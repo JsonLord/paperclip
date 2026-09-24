@@ -35,31 +35,43 @@ export function julesEnvProfileService(db: Db) {
   /** Idempotent: existing secrets and profiles are reused, never duplicated. */
   async function ensureForCompany(companyId: string, actor?: { userId?: string | null }) {
     const keys = envKeys();
-    if (!keys.length) return { created: 0, reused: 0, profileIds: [] as string[] };
+    if (!keys.length) return { created: 0, reused: 0, rotated: 0, profileIds: [] as string[] };
 
     const sessionStartLimit = Number(process.env.JULES_SESSION_START_LIMIT ?? 15);
     const sessionStartWindowSec = Number(process.env.JULES_SESSION_WINDOW_SEC ?? 86_400);
+    // Opt-in: push the current env value as a new version when a key was rotated in the
+    // deployment's settings. Off by default so a restart loop does not pile up versions.
+    const rotateExisting = /^(1|true|yes)$/i.test(process.env.JULES_SEED_ROTATE ?? "");
     const existingProfiles = await db.select().from(julesProfiles);
     const profileIds: string[] = [];
     let created = 0;
     let reused = 0;
+    let rotated = 0;
 
     for (const key of keys) {
-      // jules_profiles carries no companyId while secretRef is company-scoped, so
-      // the name is scoped here — a bare name would look present while pointing at
-      // another company's secret and fail only at dispatch. The full id is used
-      // rather than a prefix: two companies sharing the first 8 characters would
-      // otherwise collide and silently share one profile.
+      const secretName = `jules-api-${key.index}`;
+      // jules_profiles carries no companyId while secretRef is company-scoped, so the
+      // name is scoped here — a bare name would look present while pointing at another
+      // company's secret and fail only at dispatch. The full id is used rather than a
+      // prefix: two companies sharing the first 8 characters would otherwise collide
+      // and silently share one profile.
       const profileName = `jules-${companyId}-${key.index}`;
-      const already = existingProfiles.find((profile) => profile.name === profileName);
+      const existingSecret = await secrets.getByName(companyId, secretName);
+      if (existingSecret && rotateExisting) {
+        await secrets.rotate(existingSecret.id, { value: key.value }, { userId: actor?.userId ?? "system", agentId: null });
+        rotated += 1;
+      }
+      // Adopt by secretRef before name. A profile pointing at this company's key is this
+      // company's profile whatever it is called, so an earlier deployment's naming does
+      // not produce a second profile for the same key.
+      const already = (existingSecret && existingProfiles.find((profile) => profile.secretRef === existingSecret.id))
+        ?? existingProfiles.find((profile) => profile.name === profileName);
       if (already) {
         profileIds.push(already.id);
         reused += 1;
         continue;
       }
 
-      const secretName = `jules-api-${key.index}`;
-      const existingSecret = await secrets.getByName(companyId, secretName);
       const secret = existingSecret ?? (await secrets.create(
         companyId,
         {
@@ -79,7 +91,7 @@ export function julesEnvProfileService(db: Db) {
       created += 1;
     }
 
-    return { created, reused, profileIds };
+    return { created, reused, rotated, profileIds };
   }
 
   return { ensureForCompany };

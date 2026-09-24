@@ -273,24 +273,47 @@ resolved company-scoped by `resolveSecretValue()` with **no environment fallback
 so `JULES_API_1`/`JULES_API_2` cannot be referenced directly. The disk is also
 ephemeral, so a hand-made profile is lost at the next restore.
 
-`deploy/seed-jules.sh` closes both gaps on every boot: it signs in as the seeded
-admin, imports each `JULES_API_*` value as a company secret through the REST API
-(never SQL — the `local_encrypted` provider owns the material format), and creates
-one profile per key at `sessionStartLimit=15` / `sessionStartWindowSec=86400`. Two
-keys therefore give **30 session starts per 24h**.
+`deploy/seed-jules.sh` closes both gaps on every boot. It signs in as the seeded
+admin and calls `POST /api/companies/<id>/founderos/rebind-jules-source`, which
+does the work server-side:
 
-Profile names are scoped to the company (`jules-<companyId8>-<n>`) because
+1. imports each `JULES_API_*` value as a company secret (never SQL — the
+   `local_encrypted` provider owns the material format) and creates one profile
+   per key at `sessionStartLimit=15` / `sessionStartWindowSec=86400`, so two keys
+   give **30 session starts per 24h**;
+2. resolves the company's bound GitHub repository to a Jules Source by listing
+   sources with each profile's key, and records it in `company_jules_sources` +
+   `jules_profile_sources`;
+3. resumes the Jules workers that bootstrap paused for the missing Source and
+   unblocks the bootstrap issue.
+
+The endpoint is idempotent and safe to call on an already-bound company. It
+answers `200` when the company is bound and `409` with a `reason` when no profile
+can see the repository — usually because the repo has not been connected in the
+Jules account that owns that key. Only workers paused with exactly the bootstrap's
+own reason resume; one paused by an operator keeps its pause.
+
+Profile names are scoped to the company (`jules-<companyId>-<n>`) because
 `jules_profiles` carries no `companyId` while `secretRef` is company-scoped — a
 bare name would look present while pointing at another company's secret and fail
-only at dispatch.
+only at dispatch. A profile is adopted by `secretRef` before name, so a profile an
+earlier deployment created under a different naming scheme is reused rather than
+duplicated.
 
 | Variable | Effect |
 |---|---|
-| `JULES_SEED_COMPANY` | Target company id or exact name. Required once more than one company exists; the seeder refuses to guess. |
+| `JULES_SEED_COMPANY` | Target company id or exact name. Without it every company that has a bound GitHub repository is rebound. |
 | `JULES_SEED_ROTATE` | Push the current env value as a new secret version. Off by default so boots do not pile up versions. |
 | `JULES_SESSION_START_LIMIT` / `JULES_SESSION_WINDOW_SEC` | Override the 15 / 86400 defaults. |
 
-Binding a repository stays manual, since it needs the Jules-side source id:
+### Why a re-import does not fix an unbound company
+
+Jules profiles can only be created against a company, but `founderOsBootstrapService`
+resolves the Source exactly once and is idempotent afterwards. A company imported
+before its profiles existed therefore keeps every worker paused forever, and
+re-importing only creates a *duplicate* company — the original is never repaired.
+The rebind endpoint exists for that state. Binding a repository by hand is still
+possible where the Jules-side source id is already known:
 `POST /api/companies/<id>/jules-sources {repository, source, profileIds}`.
 
 ## 7. Known limitation

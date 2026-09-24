@@ -37,7 +37,8 @@ export { createJulesOutboxReconciler, startJulesOutboxReconciler, validateOutbox
 export { founderOsValidationService, validateFounderOsResult, pathAllowed, loadGitHubValidationSnapshot, validateFirmWorkspace } from "./founderos-validation/index.js";
 export { founderManagerService, parseResultJudgment, createOpenAiCompatibleFounderManagerProvider } from "./founder-manager/index.js";
 export { julesOutcomeController, enforceAttemptLimits } from "./jules-outcome-controller.js";
-export { founderOsBootstrapService, founderOsBootstrapFiles, missingBootstrapFiles, persistedJulesSourceResolver, FOUNDEROS_CONTEXT_VERSION, FOUNDEROS_CONTENT_SOURCE } from "./founderos-bootstrap.js";
+export { founderOsBootstrapService, founderOsBootstrapFiles, missingBootstrapFiles, persistedJulesSourceResolver, JULES_SOURCE_PAUSE_REASON, FOUNDEROS_CONTEXT_VERSION, FOUNDEROS_CONTENT_SOURCE } from "./founderos-bootstrap.js";
+export { founderOsRebindService } from "./founderos-rebind.js";
 export { inspectCompanyRepository, githubFounderOsRepositoryWriter } from "./founderos-github.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export * from "./founderos-content/index.js";
