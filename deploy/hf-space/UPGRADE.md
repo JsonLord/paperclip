@@ -430,6 +430,37 @@ failed to read.
 Nothing is lost when a run refuses — the state is still in the running database, and
 every earlier dump is in the backup repo's git history.
 
+## 6f. Seeding the first validation round
+
+The FounderOS bootstrap makes `validate-problem` the active goal, but its contract
+cannot be met by a company with no customers — `cannotCompleteIf` includes "Required
+real interaction count is unmet". The opening goal is therefore structurally
+uncompletable, and the workforce has nothing it can honestly finish.
+
+`analyze-market` needs only external sources, and its decision set is exactly the
+define/redefine loop: `PROCEED_TO_OFFER_VALIDATION`, `REFINE_ICP`,
+`REFINE_MARKET_SCOPE`, `GATHER_MORE_MARKET_EVIDENCE`, `PIVOT_SEGMENT`,
+`KILL_MARKET_HYPOTHESIS`. `deploy/seed-round.sh` therefore opens with the competitive
+field and leaves customer outreach for a later round, behind the approval gate that
+`DEPLOYMENT_POLICY.md` already requires.
+
+| Variable | Effect |
+|---|---|
+| `FOUNDEROS_ROUND_SEED` | Set to seed the round. Unset disables the step entirely. |
+| `FOUNDEROS_ROUND_COMPANY` | Company id or name. Falls back to `JULES_SEED_COMPANY`, then `FOUNDEROS_IMPORT_NAME`. |
+| `FOUNDEROS_ROUND_TITLE` | Round goal title, which is also the idempotency guard. |
+
+**Why the chain is `backlog` and not `blocked`.** The issue create route wakes the
+assignee for every status except backlog:
+`issue.assigneeAgentId && issue.status !== "backlog"`. Creating the six dependent
+issues as "blocked" would wake six agents at once and spend six Jules session starts
+— out of 30 per 24h — on work whose inputs do not exist yet. They are created as
+backlog, which wakes nobody, and each issue names its successor so the finishing agent
+promotes it to `todo`, which is what dispatches the next worker.
+
+Re-running is safe: the round goal's title is the guard, so a restart does not
+re-queue the round.
+
 ## 7. Known limitation
 
 Upstream does not vendor the Firm CLI (`42futures/firm`); the reviews under
