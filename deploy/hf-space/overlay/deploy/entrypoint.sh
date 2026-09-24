@@ -85,6 +85,25 @@ fi
 # BETTER_AUTH_SECRET. Without it createLocalAgentJwt() returns null, the server
 # logs "running without injected PAPERCLIP_API_KEY", and every hermes_local agent
 # hits 401 on the Paperclip API — it cannot list its own issues or close them.
+# Company secrets are sealed with a master key that the local_encrypted provider
+# otherwise GENERATES AT RANDOM into data/secrets/master.key when the file is absent.
+# This disk is ephemeral, so every rebuild invented a new key while the restored dump
+# still carried secrets sealed with the old one, and every resolveSecretValue() threw
+# ("API key not available to this company"). Derive it from BETTER_AUTH_SECRET so it
+# is the same on every boot. Domain-separated, so it is not the auth secret itself.
+if [ -z "${PAPERCLIP_SECRETS_MASTER_KEY:-}" ] && [ "${#BETTER_AUTH_SECRET}" -ge 32 ]; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    PAPERCLIP_SECRETS_MASTER_KEY="$(printf '%s' "${BETTER_AUTH_SECRET}:paperclip-secrets-master-v1" \
+      | sha256sum | awk '{print $1}')"
+    export PAPERCLIP_SECRETS_MASTER_KEY
+    log "PAPERCLIP_SECRETS_MASTER_KEY derived from BETTER_AUTH_SECRET (company secrets survive a rebuild)"
+  else
+    log "WARNING: sha256sum unavailable — company secrets will be sealed with a per-boot random key and will not survive a rebuild"
+  fi
+elif [ -z "${PAPERCLIP_SECRETS_MASTER_KEY:-}" ]; then
+  log "WARNING: BETTER_AUTH_SECRET is shorter than 32 chars — set PAPERCLIP_SECRETS_MASTER_KEY in Space secrets or company secrets will not survive a rebuild"
+fi
+
 if [ -z "${PAPERCLIP_AGENT_JWT_SECRET:-}" ] && [ "${#BETTER_AUTH_SECRET}" -ge 32 ]; then
   export PAPERCLIP_AGENT_JWT_SECRET="$BETTER_AUTH_SECRET"
   log "PAPERCLIP_AGENT_JWT_SECRET derived from BETTER_AUTH_SECRET (agents get an injected PAPERCLIP_API_KEY)"

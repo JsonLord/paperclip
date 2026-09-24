@@ -35,7 +35,7 @@ export function julesEnvProfileService(db: Db) {
   /** Idempotent: existing secrets and profiles are reused, never duplicated. */
   async function ensureForCompany(companyId: string, actor?: { userId?: string | null }) {
     const keys = envKeys();
-    if (!keys.length) return { created: 0, reused: 0, rotated: 0, profileIds: [] as string[] };
+    if (!keys.length) return { created: 0, reused: 0, rotated: 0, unreadable: 0, profileIds: [] as string[] };
 
     const sessionStartLimit = Number(process.env.JULES_SESSION_START_LIMIT ?? 15);
     const sessionStartWindowSec = Number(process.env.JULES_SESSION_WINDOW_SEC ?? 86_400);
@@ -47,6 +47,7 @@ export function julesEnvProfileService(db: Db) {
     let created = 0;
     let reused = 0;
     let rotated = 0;
+    let unreadable = 0;
 
     for (const key of keys) {
       const secretName = `jules-api-${key.index}`;
@@ -57,9 +58,20 @@ export function julesEnvProfileService(db: Db) {
       // and silently share one profile.
       const profileName = `jules-${companyId}-${key.index}`;
       const existingSecret = await secrets.getByName(companyId, secretName);
-      if (existingSecret && rotateExisting) {
-        await secrets.rotate(existingSecret.id, { value: key.value }, { userId: actor?.userId ?? "system", agentId: null });
-        rotated += 1;
+      if (existingSecret) {
+        // A secret sealed with a master key this deployment no longer has cannot be
+        // read back, and the profile pointing at it reports "API key not available to
+        // this company" forever. The environment still holds the true value, so
+        // re-seal it with the current key rather than leaving the profile dead.
+        const readable = await secrets
+          .resolveSecretValue(companyId, existingSecret.id, "latest")
+          .then(() => true)
+          .catch(() => false);
+        if (!readable || rotateExisting) {
+          await secrets.rotate(existingSecret.id, { value: key.value }, { userId: actor?.userId ?? "system", agentId: null });
+          rotated += 1;
+          if (!readable) unreadable += 1;
+        }
       }
       // Adopt by secretRef before name. A profile pointing at this company's key is this
       // company's profile whatever it is called, so an earlier deployment's naming does
@@ -91,7 +103,7 @@ export function julesEnvProfileService(db: Db) {
       created += 1;
     }
 
-    return { created, reused, rotated, profileIds };
+    return { created, reused, rotated, unreadable, profileIds };
   }
 
   return { ensureForCompany };

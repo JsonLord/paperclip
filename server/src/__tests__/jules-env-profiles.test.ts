@@ -85,6 +85,26 @@ describe("jules env profiles", () => {
     expect(store.rows.get(julesProfiles) ?? []).toHaveLength(1);
   });
 
+  it("re-seals a secret this deployment can no longer decrypt", async () => {
+    process.env.JULES_API_1 = "key-one";
+    delete process.env.JULES_API_2;
+    delete process.env.JULES_SEED_ROTATE;
+    const store = fakeDb();
+    const svc = julesEnvProfileService(store.db);
+    await svc.ensureForCompany("company-1");
+    const versionsBefore = (store.rows.get(companySecretVersions) ?? []).length;
+
+    // A master key lost with the ephemeral disk: the row is there, it just cannot be read.
+    const secrets = await import("../services/secrets.js");
+    const spy = vi.spyOn(secrets, "secretService");
+    const real = (secrets.secretService as unknown as (db: unknown) => Record<string, unknown>)(store.db);
+    spy.mockReturnValue({ ...real, resolveSecretValue: async () => { throw new Error("Unsupported state or unable to authenticate data") } } as never);
+
+    const healed = await julesEnvProfileService(store.db).ensureForCompany("company-1");
+    expect(healed).toMatchObject({ created: 0, reused: 1, rotated: 1, unreadable: 1 });
+    expect((store.rows.get(companySecretVersions) ?? []).length).toBeGreaterThan(versionsBefore);
+  });
+
   it("rotates an existing key only when asked to", async () => {
     process.env.JULES_API_1 = "key-one";
     delete process.env.JULES_API_2;
