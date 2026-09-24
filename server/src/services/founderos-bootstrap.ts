@@ -78,20 +78,55 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
 }
 
 export interface JulesSourceDiscoveryClient { listSources(pageToken?: string): Promise<{ items: Array<{ name: string; githubRepo?: { owner?: string; repo?: string } }>; nextPageToken?: string }> }
+export type JulesSourceProbe = { profileId: string; profileName: string; outcome: "matched" | "listed" | "key_unavailable" | "api_error"; sourceCount?: number; detail?: string };
+
+/**
+ * A profile that cannot be used and a profile that simply does not expose the
+ * repository are different problems with different fixes — a missing company secret
+ * versus a repository not connected in that Jules account. Both used to surface as one
+ * "no profile exposes the repository", so record what each profile actually did.
+ */
+export function summarizeJulesSourceProbes(repository: string, probes: JulesSourceProbe[]): string {
+  if (!probes.length) return "No enabled Jules profile is configured";
+  const unusable = probes.filter((probe) => probe.outcome !== "listed");
+  const listed = probes.filter((probe) => probe.outcome === "listed");
+  const parts: string[] = [];
+  if (listed.length) parts.push(`${listed.length} profile(s) listed ${listed.reduce((total, probe) => total + (probe.sourceCount ?? 0), 0)} source(s), none matching ${repository}`);
+  for (const probe of unusable) parts.push(`${probe.profileName}: ${probe.outcome === "key_unavailable" ? "API key not available to this company" : probe.detail ?? "Jules API error"}`);
+  return parts.join("; ");
+}
+
 export function persistedJulesSourceResolver(db: Db, companyId: string, createClient: (apiKey: string) => JulesSourceDiscoveryClient) {
   return { resolve: async (repository: string) => {
     const { julesProfiles } = await import("@paperclipai/db");
     const { secretService } = await import("./secrets.js");
     const profiles = await db.select().from(julesProfiles).where(eq(julesProfiles.enabled, true));
     const [owner, name] = repository.toLowerCase().split("/");
+    const probes: JulesSourceProbe[] = [];
     let found: { source: string; profileId: string } | null = null;
-    for (const profile of profiles) try {
-      const apiKey = await secretService(db).resolveSecretValue(companyId, profile.secretRef, "latest");
-      const client = createClient(apiKey); let page: string | undefined;
-      do { const result = await client.listSources(page); const match = result.items.find((item) => item.githubRepo?.owner?.toLowerCase() === owner && item.githubRepo?.repo?.toLowerCase() === name); if (match) { found={source:match.name,profileId:profile.id}; break; } page=result.nextPageToken; } while(page);
+    for (const profile of profiles) {
+      const probe: JulesSourceProbe = { profileId: profile.id, profileName: profile.name, outcome: "listed", sourceCount: 0 };
+      probes.push(probe);
+      let apiKey: string;
+      try { apiKey = await secretService(db).resolveSecretValue(companyId, profile.secretRef, "latest"); }
+      catch { probe.outcome = "key_unavailable"; continue; }
+      try {
+        const client = createClient(apiKey); let page: string | undefined;
+        do {
+          const result = await client.listSources(page);
+          probe.sourceCount = (probe.sourceCount ?? 0) + result.items.length;
+          const match = result.items.find((item) => item.githubRepo?.owner?.toLowerCase() === owner && item.githubRepo?.repo?.toLowerCase() === name);
+          if (match) { probe.outcome = "matched"; found = { source: match.name, profileId: profile.id }; break; }
+          page = result.nextPageToken;
+        } while (page);
+      } catch (error) {
+        // The message can echo request details, so keep anything key-shaped out of it.
+        probe.outcome = "api_error";
+        probe.detail = String(error instanceof Error ? error.message : error).replace(/[A-Za-z0-9_-]{24,}/g, "***").slice(0, 200);
+      }
       if (found) break;
-    } catch { /* an inaccessible profile is not eligible for this company */ }
-    if (!found) return { source:"",accessible:false,reason:"No configured Jules profile exposes the imported GitHub repository" };
-    return {source:found.source,profileId:found.profileId,accessible:true};
+    }
+    if (!found) return { source: "", accessible: false, reason: summarizeJulesSourceProbes(repository, probes), probes };
+    return { source: found.source, profileId: found.profileId, accessible: true, probes };
   }};
 }

@@ -11,6 +11,8 @@ export interface FounderOsRebindResult {
   profileId: string | null;
   agentsResumed: number;
   issuesUnblocked: number;
+  /** Per-profile outcome of Jules Source discovery; present when resolution ran. */
+  probes?: unknown[];
 }
 
 /**
@@ -49,7 +51,7 @@ export function founderOsRebindService(db: Db, options: { sourceResolver: Founde
     const startingBranch = binding?.defaultBranch ?? "main";
 
     const resolved = await options.sourceResolver.resolve(repository);
-    if (!resolved.accessible || !resolved.source) return { ...empty, repository, reason: resolved.reason ?? "No configured Jules profile exposes this repository" };
+    if (!resolved.accessible || !resolved.source) return { ...empty, repository, reason: resolved.reason ?? "No configured Jules profile exposes this repository", probes: (resolved as { probes?: unknown[] }).probes };
 
     return db.transaction(async (tx) => {
       const [source] = await tx.insert(companyJulesSources)

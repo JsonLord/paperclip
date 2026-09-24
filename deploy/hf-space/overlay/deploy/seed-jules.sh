@@ -107,7 +107,15 @@ except Exception: print(""); raise SystemExit
 if d.get("rebound"):
     print("source=%s profile=%s resumed=%s unblocked=%s" % (d.get("source"), d.get("profileId"), d.get("agentsResumed"), d.get("issuesUnblocked")))
 else:
-    print(d.get("reason") or d.get("error") or "no detail")
+    reason=d.get("reason") or d.get("error") or "no detail"
+    probes=d.get("probes") or []
+    detail="".join(
+        "\n    - %s: %s%s%s" % (
+            p.get("profileName"), p.get("outcome"),
+            (" (%s sources)" % p["sourceCount"]) if p.get("sourceCount") is not None else "",
+            (" — %s" % p["detail"]) if p.get("detail") else "",
+        ) for p in probes)
+    print(reason + detail)
 ' "$tmp/out.json" 2>/dev/null)"
   case "$status" in
     200) log "$company_name: jules bound — $summary" ;;
