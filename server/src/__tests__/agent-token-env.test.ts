@@ -53,3 +53,31 @@ describe("agent Paperclip API key injection", () => {
     expect(result.config.env).toEqual({ [AGENT_API_KEY_ENV]: "jwt-token" });
   });
 });
+
+import { AGENT_GITHUB_TOKEN_ENV, withAgentGithubToken } from "../services/agent-token-env.js";
+
+describe("agent GitHub token injection", () => {
+  it("puts the token in the shell so a local agent can write via the REST API", () => {
+    const result = withAgentGithubToken({ model: "alias-large" }, "ghp_example");
+    expect(result.injected).toBe(true);
+    expect(result.config.env).toEqual({ [AGENT_GITHUB_TOKEN_ENV]: "ghp_example" });
+  });
+
+  it("preserves the Paperclip key when both are injected", () => {
+    const withApi = withAgentApiKey({ model: "alias-large" }, "jwt").config;
+    const both = withAgentGithubToken(withApi, "ghp_example").config;
+    expect(both.env).toEqual({ [AGENT_API_KEY_ENV]: "jwt", [AGENT_GITHUB_TOKEN_ENV]: "ghp_example" });
+  });
+
+  it("does nothing without a token, so an unconfigured deployment is unchanged", () => {
+    expect(withAgentGithubToken({ model: "x" }, null).injected).toBe(false);
+    expect(withAgentGithubToken({ model: "x" }, "   ").injected).toBe(false);
+  });
+
+  it("never overrides a token an operator configured", () => {
+    const pinned = { env: { [AGENT_GITHUB_TOKEN_ENV]: "operator-token" } };
+    const result = withAgentGithubToken(pinned, "ghp_example");
+    expect(result.injected).toBe(false);
+    expect(result.config.env).toEqual({ [AGENT_GITHUB_TOKEN_ENV]: "operator-token" });
+  });
+});

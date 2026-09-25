@@ -2,18 +2,30 @@ import { describe, expect, it } from "vitest";
 import { HERMES_PROMPT_TEMPLATE, curlExamplesIn, withHermesPromptTemplate } from "../services/hermes-prompt.js";
 
 describe("hermes_local prompt template", () => {
-  it("authenticates in every curl example it shows the agent", () => {
-    const examples = curlExamplesIn(HERMES_PROMPT_TEMPLATE);
+  const paperclipCurls = (t: string) => curlExamplesIn(t).filter((e) => !e.includes("api.github.com"));
+  const githubCurls = (t: string) => curlExamplesIn(t).filter((e) => e.includes("api.github.com"));
+
+  it("authenticates in every Paperclip curl example it shows the agent", () => {
+    const examples = paperclipCurls(HERMES_PROMPT_TEMPLATE);
     // The adapter's own default omits the header everywhere, which is the bug this fixes.
     expect(examples.length).toBeGreaterThan(4);
     for (const example of examples) expect(example).toContain('-H "Authorization: Bearer $PAPERCLIP_API_KEY"');
   });
 
-  it("sends the run id on every call that modifies an issue", () => {
-    for (const example of curlExamplesIn(HERMES_PROMPT_TEMPLATE)) {
+  it("sends the run id on every Paperclip call that modifies an issue", () => {
+    for (const example of paperclipCurls(HERMES_PROMPT_TEMPLATE)) {
       const mutating = example.includes("-X POST") || example.includes("-X PATCH");
       expect(mutating === example.includes('-H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID"')).toBe(true);
     }
+  });
+
+  it("authenticates every GitHub curl with the github token and never merges", () => {
+    const examples = githubCurls(HERMES_PROMPT_TEMPLATE);
+    expect(examples.length).toBeGreaterThan(3);
+    for (const example of examples) expect(example).toContain('-H "Authorization: Bearer $GITHUB_TOKEN"');
+    // The merge gate stays human: the recipe opens PRs, never merges or pushes to main.
+    expect(HERMES_PROMPT_TEMPLATE).not.toMatch(/\/merge/);
+    expect(HERMES_PROMPT_TEMPLATE).toMatch(/do not push to\s+the default branch/);
   });
 
   it("never embeds a token value, only the variable", () => {

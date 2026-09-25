@@ -26,7 +26,7 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
-import { AGENT_API_KEY_ENV, withAgentApiKey } from "./agent-token-env.js";
+import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, withAgentApiKey, withAgentGithubToken } from "./agent-token-env.js";
 import { withHermesPromptTemplate } from "./hermes-prompt.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
@@ -2233,6 +2233,18 @@ export function heartbeatService(db: Db) {
       if (authToken) {
         resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
         secretKeys.add(AGENT_API_KEY_ENV);
+      }
+      // Hermes runs in the container and, unlike a Jules worker, is not already inside
+      // the company repository — so to write to it, it needs a GitHub token in its
+      // shell and reaches the repo through the REST API with curl. The grant is narrow
+      // by adapter: only hermes_local receives it, and a deployment-scoped token is
+      // preferred over the broad one. It is injected at runtime and never persisted.
+      if (agent.adapterType === "hermes_local") {
+        const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
+        if (githubToken) {
+          resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
+          secretKeys.add(AGENT_GITHUB_TOKEN_ENV);
+        }
       }
       resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;

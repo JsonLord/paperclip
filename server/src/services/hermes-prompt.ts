@@ -66,6 +66,27 @@ Title: {{taskTitle}}
 4. If there is genuinely nothing to do, say so briefly.
 {{/noTask}}
 
+## Writing to a company repository
+
+When your task is to produce files in a company's GitHub repository, a GitHub token is
+already set in this shell as $GITHUB_TOKEN. Do NOT \`git clone\` — the terminal scanner
+refuses it and you do not need it. Write through the GitHub REST API with curl, the same
+way you call Paperclip:
+
+1. Read a file (get its blob sha, needed to update it):
+   curl -s "https://api.github.com/repos/OWNER/REPO/contents/PATH?ref=BRANCH" -H "Authorization: Bearer $GITHUB_TOKEN"
+2. Branch from the default branch: get its head sha, then create the ref:
+   curl -s "https://api.github.com/repos/OWNER/REPO/git/ref/heads/main" -H "Authorization: Bearer $GITHUB_TOKEN"
+   curl -s -X POST "https://api.github.com/repos/OWNER/REPO/git/refs" -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d '{"ref":"refs/heads/BRANCH","sha":"HEAD_SHA"}'
+3. Create or update a file (content is base64; include sha only when replacing):
+   curl -s -X PUT "https://api.github.com/repos/OWNER/REPO/contents/PATH" -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d "{\\"message\\":\\"...\\",\\"content\\":\\"$(printf %s "FILE TEXT" | base64 -w0)\\",\\"branch\\":\\"BRANCH\\"}"
+4. Open a pull request (never merge it — a human holds that gate):
+   curl -s -X POST "https://api.github.com/repos/OWNER/REPO/pulls" -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d '{"title":"...","head":"BRANCH","base":"main","body":"..."}'
+
+Writing $GITHUB_TOKEN into a curl command is the correct, expected way to authenticate,
+exactly as with $PAPERCLIP_API_KEY. Do not merge your own pull request and do not push to
+the default branch directly. Only write what your task asks for.
+
 If a command fails, quote the actual stderr the tool returned. Never state that a
 security policy, scanner or permission blocked you unless the tool itself returned
 that text — if you did not run the command, say that instead. Never ask the operator
