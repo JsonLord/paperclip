@@ -67,9 +67,24 @@ RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/cod
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
        python3 python3-pip pipx build-essential gettext-base postgresql postgresql-contrib postgresql-client tzdata \
-  && rm -rf /var/lib/apt/lists/* \
-  && (curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash || pipx install --global hermes-agent) \
-  && pipx install --global openviking==0.4.6
+  && rm -rf /var/lib/apt/lists/*
+# Install the hermes CLI, then PROVE it landed. The previous form was
+# `curl ... | bash || pipx ...`, but a pipeline's exit status is bash's, not curl's:
+# when the install.sh endpoint fails, bash reads empty stdin and exits 0, so the pipx
+# fallback never ran and the image shipped with no hermes — every hermes_local run then
+# died at spawn with "command not found", non-deterministically per rebuild. Download to
+# a file so curl's own failure is visible, fall back to pipx, and hard-fail the build if
+# hermes is still missing rather than shipping a broken image.
+RUN set -eux; \
+    if curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh && bash /tmp/hermes-install.sh; then \
+      echo "hermes: installed via install.sh"; \
+    else \
+      echo "hermes: install.sh unavailable, using pipx"; pipx install --global hermes-agent; \
+    fi; \
+    rm -f /tmp/hermes-install.sh; \
+    pipx install --global openviking==0.4.6; \
+    command -v hermes >/dev/null 2>&1 || { echo "FATAL: hermes CLI missing after install"; exit 1; }; \
+    hermes --version || true
 
 # Firm CLI. Every FounderOS goal contract ends in "firm build passes" and the server
 # shells out to `firm` (services/firm-cli.ts, FIRM_CLI_PATH or PATH), so without it the
