@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  goals,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -25,6 +26,8 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
+import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, withAgentApiKey, withAgentGithubToken } from "./agent-token-env.js";
+import { withHermesPromptTemplate } from "./hermes-prompt.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -51,6 +54,8 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { goalSupportService } from "./goal-support.js";
+import { runProductivityService } from "./run-productivity.js";
+import { logActivity } from "./activity-log.js";
 import { julesSessionService } from "./jules-sessions.js";
 import { requestJulesReconciliation } from "./jules-reconciler.js";
 import { julesCapacityBroker, resolveJulesExecutionRequirements } from "./jules-capacity-broker.js";
@@ -703,6 +708,20 @@ function resolveNextSessionState(input: {
   };
 }
 
+/**
+ * Runs currently executing in THIS process, shared by every heartbeatService instance.
+ *
+ * heartbeatService is a factory, not a singleton — the scheduler in index.ts, and the
+ * routes for issues, agents, approvals, companies and costs each construct their own.
+ * While this lived inside the factory each instance had its own empty Set, so the
+ * scheduler's reaper could not see a run executing in a route's instance and declared
+ * it "Process lost" once it passed the staleness threshold. runningProcesses is
+ * module-scoped for the same reason; this has to match it.
+ *
+ * Exported so the reaper test can hold a run in flight without starting a subprocess.
+ */
+export const activeRunExecutions = new Set<string>();
+
 export function heartbeatService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
 
@@ -712,9 +731,9 @@ export function heartbeatService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const goalSupport = goalSupportService(db);
+  const runProductivity = runProductivityService(db);
   const julesLifecycle = julesSessionService(db);
   const julesBroker = julesCapacityBroker(db);
-  const activeRunExecutions = new Set<string>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
   };
@@ -975,6 +994,9 @@ export function heartbeatService(db: Db) {
             projectId: issues.projectId,
             goalId: issues.goalId,
             projectWorkspaceId: issues.projectWorkspaceId,
+            title: issues.title,
+            description: issues.description,
+            priority: issues.priority,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
@@ -984,6 +1006,25 @@ export function heartbeatService(db: Db) {
     if (supportGoalId) {
       const support = await goalSupport.resolve(supportGoalId);
       if (support?.companyId === agent.companyId) context.goalSupport = support.resolution;
+    }
+    // A remote adapter has no Paperclip credential and cannot read the issue it was woken
+    // for, so the assignment has to travel with the run. Local adapters already receive it
+    // through the API; carrying it here costs one column each on a query already made.
+    if (issueProjectRef?.title) {
+      const goalRow = supportGoalId
+        ? await db
+            .select({ title: goals.title })
+            .from(goals)
+            .where(and(eq(goals.id, supportGoalId), eq(goals.companyId, agent.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      context.assignment = {
+        issueId,
+        title: issueProjectRef.title,
+        description: issueProjectRef.description ?? null,
+        priority: issueProjectRef.priority ?? null,
+        goal: goalRow?.title ?? null,
+      };
     }
     const issueProjectId = issueProjectRef?.projectId ?? null;
     const preferredProjectWorkspaceId =
@@ -2182,6 +2223,30 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      // The adapter contract is that a local-JWT adapter turns ctx.authToken into the
+      // PAPERCLIP_API_KEY the agent authenticates with, but hermes-paperclip-adapter
+      // reads only ctx.agent/ctx.runtime and its settings from ctx.agent.adapterConfig,
+      // so the token is minted and dropped and the agent reports every Paperclip call
+      // as unauthorized. Carry it in the resolved config, which is handed to the
+      // adapter as adapterConfig below, the same way a Jules admission carries
+      // JULES_API_KEY. An explicitly configured key still wins.
+      if (authToken) {
+        resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
+        secretKeys.add(AGENT_API_KEY_ENV);
+      }
+      // Hermes runs in the container and, unlike a Jules worker, is not already inside
+      // the company repository — so to write to it, it needs a GitHub token in its
+      // shell and reaches the repo through the REST API with curl. The grant is narrow
+      // by adapter: only hermes_local receives it, and a deployment-scoped token is
+      // preferred over the broad one. It is injected at runtime and never persisted.
+      if (agent.adapterType === "hermes_local") {
+        const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
+        if (githubToken) {
+          resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
+          secretKeys.add(AGENT_GITHUB_TOKEN_ENV);
+        }
+      }
+      resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);
@@ -2223,7 +2288,11 @@ export function heartbeatService(db: Db) {
         try {
           adapterResult = await adapter.execute({
             runId: run.id,
-            agent,
+            // adapterConfig is what an adapter reads its settings from, and the
+            // resolved config is that same object with secret bindings replaced by
+            // their values. Handing over the raw one leaves an adapter to receive a
+            // binding object where it expects a string.
+            agent: { ...agent, adapterConfig: resolvedConfig },
             runtime: runtimeForAdapter,
             config: resolvedConfig,
             context,
@@ -2458,6 +2527,37 @@ export function heartbeatService(db: Db) {
               lastError: outcome === "succeeded" ? null : (adapterResult.errorMessage ?? "run_failed"),
             });
           }
+        }
+      }
+      // An exit code says the adapter process ended cleanly and nothing more. Record
+      // whether anything actually came of the run, so a success that left the assigned
+      // outcome untouched is visible rather than indistinguishable from real work.
+      if (outcome === "succeeded" && finalizedRun) {
+        try {
+          const productivity = await runProductivity.assess({
+            companyId: agent.companyId, agentId: agent.id, runId: finalizedRun.id,
+            issueId, startedAt: finalizedRun.startedAt ?? null,
+          });
+          if (productivity.assessed) {
+            await db.update(heartbeatRuns)
+              .set({ resultJson: { ...(finalizedRun.resultJson ?? {}), producedWork: productivity.produced, productivitySignals: productivity.signals }, updatedAt: new Date() })
+              .where(eq(heartbeatRuns.id, finalizedRun.id));
+            if (!productivity.produced) {
+              await appendRunEvent(finalizedRun, seq++, {
+                eventType: "lifecycle", stream: "system", level: "warn",
+                message: "run succeeded without producing anything for its assigned outcome",
+                payload: { issueId, producedWork: false },
+              });
+              await logActivity(db, {
+                companyId: agent.companyId, actorType: "agent", actorId: agent.id, agentId: agent.id,
+                runId: finalizedRun.id, action: "run.produced_nothing", entityType: "issue", entityId: issueId ?? finalizedRun.id,
+                details: { runId: finalizedRun.id, adapterType: agent.adapterType },
+              });
+            }
+          }
+        } catch (error) {
+          // Never let bookkeeping fail a run that genuinely completed.
+          logger.warn({ err: error, runId: finalizedRun.id }, "run productivity assessment failed");
         }
       }
       await finalizeAgentStatus(agent.id, outcome);

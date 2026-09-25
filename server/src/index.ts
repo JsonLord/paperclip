@@ -1,6 +1,7 @@
 /// <reference path="./types/express.d.ts" />
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { startOpsApplier } from "./services/ops-applier.js";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -525,6 +526,7 @@ export async function startServer(): Promise<StartedServer> {
     });
   
   startFirmRefreshScheduler(db as any);
+  startOpsApplier(db as any);
   startJulesReconciler(db as any);
   startJulesOutboxReconciler(db as any);
 

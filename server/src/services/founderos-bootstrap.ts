@@ -1,9 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, agents, companies, companyJulesSources, companyRepositoryBindings, founderosBootstraps, goals, issues, projectGoals, projects, resourcePackSnapshots } from "@paperclipai/db";
+import { activityLog, agents, companies, companyJulesSources, companyRepositoryBindings, founderosBootstraps, goals, goalTemplateInstances, issues, projectGoals, projects, resourcePackSnapshots } from "@paperclipai/db";
+import { founderOsDeploymentGoalTemplates, founderOsWorkforce, validateDeploymentCatalog } from "./founderos-deployment-catalog.js";
 
 export const FOUNDEROS_CONTEXT_VERSION = "founderos-context/v1";
 export const FOUNDEROS_CONTENT_SOURCE = "JsonLord/FounderOS-DEMO";
+// A Jules worker paused with exactly this reason is one the bootstrap paused for a missing
+// Source, and is the only kind founderOsRebindService may resume.
+export const JULES_SOURCE_PAUSE_REASON = "Jules source/profile access must be configured";
 export interface CompanyRepositoryInspection { repository: string; repositoryId?: string; defaultBranch: string; commitSha: string; paths: string[]; readText(path: string): Promise<string | null> }
 export interface FounderOsRepositoryWriter { createBootstrapPullRequest(input: { repository: string; baseBranch: string; title: string; files: Record<string, string> }): Promise<{ url: string; branch: string; commitSha: string }> }
 export interface FounderOsSourceResolver { resolve(repository: string): Promise<{ source: string; accessible: boolean; profileId?: string; reason?: string }> }
@@ -47,16 +51,20 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
       await tx.update(companies).set({ firmGithubRepo: repo.repository, updatedAt: new Date() }).where(eq(companies.id, companyId));
       let companySourceId: string | null = null;
       if (source.accessible) { const [bound] = await tx.insert(companyJulesSources).values({ companyId, repository: repo.repository, source: source.source, startingBranch: repo.defaultBranch, enabled: true }).onConflictDoUpdate({ target: [companyJulesSources.companyId, companyJulesSources.repository], set: { source: source.source, startingBranch: repo.defaultBranch, enabled: true, updatedAt: new Date() } }).returning(); companySourceId = bound.id; if (source.profileId) { const { julesProfileSources } = await import("@paperclipai/db"); await tx.insert(julesProfileSources).values({profileId:source.profileId,companySourceId:bound.id,status:"active",verifiedAt:new Date()}).onConflictDoNothing(); } }
-      const [manager] = await tx.insert(agents).values({ companyId, name: "Founder Manager", role: "ceo", title: "FounderOS Founder Manager", adapterType: "hermes_local", status: "idle", capabilities: "result judgment, governance, prioritization", metadata: { founderosTemplateId: "founder-manager", contextVersion: FOUNDEROS_CONTEXT_VERSION } }).returning();
-      const workerSpecs = [{ key:"evidence",name:"Evidence Steward",title:"Evidence / Validation" },{ key:"market",name:"Market Analyst",title:"Market / Research" },{ key:"customer",name:"Customer Discovery",title:"Customer Discovery" }];
-      const workers = await tx.insert(agents).values(workerSpecs.map((w) => ({ companyId, name:w.name, role:"general", title:w.title, reportsTo:manager.id, adapterType:"jules", status:"idle", capabilities:"firm, context7, linear", metadata:{ founderosTemplateId:w.key, contextVersion:FOUNDEROS_CONTEXT_VERSION } }))).returning();
+      const catalog = validateDeploymentCatalog();
+      if (!catalog.valid) throw new Error(`FounderOS deployment catalog is invalid: ${catalog.errors.join("; ")}`);
+      const [manager] = await tx.insert(agents).values({ companyId, name: "Founder Manager", role: "ceo", title: "FounderOS Founder Manager", adapterType: "hermes_local", adapterConfig: { model: process.env.FOUNDER_MANAGER_MODEL ?? "alias-large", timeoutSec: Number(process.env.FOUNDER_MANAGER_TIMEOUT_SEC ?? 900) }, status: "idle", capabilities: "result judgment, governance, prioritization", metadata: { founderosTemplateId: "founder-manager", contextVersion: FOUNDEROS_CONTEXT_VERSION } }).returning();
+      const workers = await tx.insert(agents).values(founderOsWorkforce.map((worker) => ({ companyId, name:worker.name, role:"general", title:worker.title, reportsTo:manager.id, adapterType:"jules", adapterConfig:{repository:repo.repository,source:source.accessible?source.source:"",startingBranch:repo.defaultBranch,outcomeTemplate:"bootstrap",autoApprovePlan:true}, status:source.accessible?"idle":"paused", pauseReason:source.accessible?null:JULES_SOURCE_PAUSE_REASON, capabilities:"firm, github, playwright, context7, linear", metadata:{ founderosTemplateId:[worker.key,...worker.roleAliases].join(","), contextVersion:FOUNDEROS_CONTEXT_VERSION, deploymentReady:source.accessible } }))).returning();
       const [vision] = await tx.insert(goals).values({ companyId, title:`Vision — Validate and establish a viable business around ${company.name}`, description:"Establish viability through source-backed evidence; no traction, customer, revenue, or market proof is assumed.", level:"company", status:"active", ownerAgentId:manager.id }).returning();
-      const childSpecs = [{title:"Validate venture thesis",owner:workers[0]!.id},{title:"Validate market / ICP",owner:workers[1]!.id},{title:"Validate problem",owner:workers[2]!.id},{title:"Establish evidence baseline",owner:workers[0]!.id}];
-      const children = await tx.insert(goals).values(childSpecs.map((g) => ({ companyId, title:g.title, parentId:vision.id, level:"objective", status:"active", ownerAgentId:g.owner, requiredSkills:["evidence discipline"], supportPacks:[{id:"core.evidence-discipline",version:"1",required:true},{id:"core.company-bootstrap",version:"1",required:true}], requiredCapabilities:["firm","context7","linear"], inputPaths:["company/OVERVIEW.md","website/**"], outputPaths:["company/VENTURE_THESIS.md","evidence/CLAIM_EVIDENCE_LEDGER.md","evidence/ASSUMPTION_REGISTER.md","business-case/VALIDATION_MAP.md","firm/**"], acceptanceCriteria:["Every factual claim maps to a supplied source or is explicitly marked hypothesis/assumption","Firm build succeeds","Recommend the cheapest next validation step"], cannotCompleteIf:["Source-derived claims lack provenance","Firm build fails"] }))).returning();
-      const [project] = await tx.insert(projects).values({ companyId, goalId:children[0]!.id, name:"Initial Venture Validation", description:"Evidence-first assessment of the imported overview and landing page.", status:"in_progress", leadAgentId:workers[0]!.id, executionWorkspacePolicy:{repository:repo.repository,baseBranch:repo.defaultBranch} }).returning();
-      await tx.insert(projectGoals).values(children.map((g) => ({ companyId, projectId:project.id, goalId:g.id }))).onConflictDoNothing();
+      const ownerFor = (role: string) => workers.find((worker) => String((worker.metadata as Record<string, unknown>)?.founderosTemplateId ?? "").includes(role)) ?? workers[0]!;
+      const children = await tx.insert(goals).values(founderOsDeploymentGoalTemplates.map((template) => ({ companyId, title:template.title, description:template.objective, parentId:vision.id, level:"objective", status:template.id==="validate-problem"?"active":"planned", ownerAgentId:ownerFor(template.recommendedOwnerRole).id, requiredSkills:template.requiredSkills, supportPacks:template.supportPacks, requiredCapabilities:template.requiredCapabilities, inputPaths:template.inputPaths, outputPaths:template.outputPaths, acceptanceCriteria:template.acceptanceCriteria, cannotCompleteIf:template.cannotCompleteIf }))).returning();
+      await tx.insert(goalTemplateInstances).values(children.map((goal, index) => { const template=founderOsDeploymentGoalTemplates[index]!; return {companyId,goalId:goal.id,parentGoalId:vision.id,templateId:template.id,templateVersion:template.version,systemId:template.system,sourceRepository:options.contentSource??FOUNDEROS_CONTENT_SOURCE,sourceCommit:options.contentCommit,contractSnapshot:template as unknown as Record<string,unknown>}; })).onConflictDoNothing();
+      const initialGoal = children[founderOsDeploymentGoalTemplates.findIndex((template) => template.id === "validate-problem")]!;
+      const initialOwner = ownerFor("customer");
+      const [project] = await tx.insert(projects).values({ companyId, goalId:initialGoal.id, name:"Initial Venture Validation", description:"Evidence-first assessment of the imported overview and landing page.", status:"in_progress", leadAgentId:initialOwner.id, executionWorkspacePolicy:{repository:repo.repository,baseBranch:repo.defaultBranch} }).returning();
+      await tx.insert(projectGoals).values({ companyId, projectId:project.id, goalId:initialGoal.id }).onConflictDoNothing();
       const readiness = !overview ? "Missing company/OVERVIEW.md" : !hasWebsite ? "Missing website/ landing-page source" : !source.accessible ? `Jules Source unavailable: ${source.reason ?? "access not verified"}` : null;
-      const [issue] = await tx.insert(issues).values({ companyId, goalId:children[0]!.id, projectId:project.id, title:"Establish the initial evidence baseline", description:"Assess the company overview and landing page; identify unsupported claims and contradictions; initialize assumption/evidence structures; recommend the cheapest next validation step. Unknowns must remain unknown, hypotheses, or assumptions.", status:readiness ? "blocked" : "todo", priority:"high", assigneeAgentId:workers[0]!.id, createdByAgentId:manager.id }).returning();
+      const [issue] = await tx.insert(issues).values({ companyId, goalId:initialGoal.id, projectId:project.id, title:"Establish the initial evidence baseline", description:"Assess the company overview and landing page; identify unsupported claims and contradictions; initialize assumption/evidence structures; recommend the cheapest next validation step. Unknowns must remain unknown, hypotheses, or assumptions.", status:readiness ? "blocked" : "todo", priority:"high", assigneeAgentId:initialOwner.id, createdByAgentId:manager.id }).returning();
       const packs = ["core.evidence-discipline","core.goal-contract","core.governance","core.company-bootstrap"];
       for (const packId of packs) await tx.insert(resourcePackSnapshots).values({ companyId, packId, version:"1", tier:"core", installedPath:`.founderos/support/${packId}`, sourceRepo:options.contentSource ?? FOUNDEROS_CONTENT_SOURCE, sourceCommit:options.contentCommit, manifest:{id:packId,version:"1",files:Object.keys(missing).filter((p)=>p.startsWith(".founderos/")),qualityGates:["no invented facts","no secrets","source provenance required"]} }).onConflictDoNothing();
       const nativeIds = { visionGoalId:vision.id, childGoalIds:children.map((g)=>g.id), managerAgentId:manager.id, workerAgentIds:workers.map((w)=>w.id), projectId:project.id, issueId:issue.id };
@@ -70,20 +78,55 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
 }
 
 export interface JulesSourceDiscoveryClient { listSources(pageToken?: string): Promise<{ items: Array<{ name: string; githubRepo?: { owner?: string; repo?: string } }>; nextPageToken?: string }> }
+export type JulesSourceProbe = { profileId: string; profileName: string; outcome: "matched" | "listed" | "key_unavailable" | "api_error"; sourceCount?: number; detail?: string };
+
+/**
+ * A profile that cannot be used and a profile that simply does not expose the
+ * repository are different problems with different fixes — a missing company secret
+ * versus a repository not connected in that Jules account. Both used to surface as one
+ * "no profile exposes the repository", so record what each profile actually did.
+ */
+export function summarizeJulesSourceProbes(repository: string, probes: JulesSourceProbe[]): string {
+  if (!probes.length) return "No enabled Jules profile is configured";
+  const unusable = probes.filter((probe) => probe.outcome !== "listed");
+  const listed = probes.filter((probe) => probe.outcome === "listed");
+  const parts: string[] = [];
+  if (listed.length) parts.push(`${listed.length} profile(s) listed ${listed.reduce((total, probe) => total + (probe.sourceCount ?? 0), 0)} source(s), none matching ${repository}`);
+  for (const probe of unusable) parts.push(`${probe.profileName}: ${probe.outcome === "key_unavailable" ? "API key not available to this company" : probe.detail ?? "Jules API error"}`);
+  return parts.join("; ");
+}
+
 export function persistedJulesSourceResolver(db: Db, companyId: string, createClient: (apiKey: string) => JulesSourceDiscoveryClient) {
   return { resolve: async (repository: string) => {
     const { julesProfiles } = await import("@paperclipai/db");
     const { secretService } = await import("./secrets.js");
     const profiles = await db.select().from(julesProfiles).where(eq(julesProfiles.enabled, true));
     const [owner, name] = repository.toLowerCase().split("/");
+    const probes: JulesSourceProbe[] = [];
     let found: { source: string; profileId: string } | null = null;
-    for (const profile of profiles) try {
-      const apiKey = await secretService(db).resolveSecretValue(companyId, profile.secretRef, "latest");
-      const client = createClient(apiKey); let page: string | undefined;
-      do { const result = await client.listSources(page); const match = result.items.find((item) => item.githubRepo?.owner?.toLowerCase() === owner && item.githubRepo?.repo?.toLowerCase() === name); if (match) { found={source:match.name,profileId:profile.id}; break; } page=result.nextPageToken; } while(page);
+    for (const profile of profiles) {
+      const probe: JulesSourceProbe = { profileId: profile.id, profileName: profile.name, outcome: "listed", sourceCount: 0 };
+      probes.push(probe);
+      let apiKey: string;
+      try { apiKey = await secretService(db).resolveSecretValue(companyId, profile.secretRef, "latest"); }
+      catch { probe.outcome = "key_unavailable"; continue; }
+      try {
+        const client = createClient(apiKey); let page: string | undefined;
+        do {
+          const result = await client.listSources(page);
+          probe.sourceCount = (probe.sourceCount ?? 0) + result.items.length;
+          const match = result.items.find((item) => item.githubRepo?.owner?.toLowerCase() === owner && item.githubRepo?.repo?.toLowerCase() === name);
+          if (match) { probe.outcome = "matched"; found = { source: match.name, profileId: profile.id }; break; }
+          page = result.nextPageToken;
+        } while (page);
+      } catch (error) {
+        // The message can echo request details, so keep anything key-shaped out of it.
+        probe.outcome = "api_error";
+        probe.detail = String(error instanceof Error ? error.message : error).replace(/[A-Za-z0-9_-]{24,}/g, "***").slice(0, 200);
+      }
       if (found) break;
-    } catch { /* an inaccessible profile is not eligible for this company */ }
-    if (!found) return { source:"",accessible:false,reason:"No configured Jules profile exposes the imported GitHub repository" };
-    return {source:found.source,profileId:found.profileId,accessible:true};
+    }
+    if (!found) return { source: "", accessible: false, reason: summarizeJulesSourceProbes(repository, probes), probes };
+    return { source: found.source, profileId: found.profileId, accessible: true, probes };
   }};
 }

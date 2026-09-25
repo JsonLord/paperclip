@@ -37,7 +37,8 @@ export { createJulesOutboxReconciler, startJulesOutboxReconciler, validateOutbox
 export { founderOsValidationService, validateFounderOsResult, pathAllowed, loadGitHubValidationSnapshot, validateFirmWorkspace } from "./founderos-validation/index.js";
 export { founderManagerService, parseResultJudgment, createOpenAiCompatibleFounderManagerProvider } from "./founder-manager/index.js";
 export { julesOutcomeController, enforceAttemptLimits } from "./jules-outcome-controller.js";
-export { founderOsBootstrapService, founderOsBootstrapFiles, missingBootstrapFiles, persistedJulesSourceResolver, FOUNDEROS_CONTEXT_VERSION, FOUNDEROS_CONTENT_SOURCE } from "./founderos-bootstrap.js";
+export { founderOsBootstrapService, founderOsBootstrapFiles, missingBootstrapFiles, persistedJulesSourceResolver, JULES_SOURCE_PAUSE_REASON, FOUNDEROS_CONTEXT_VERSION, FOUNDEROS_CONTENT_SOURCE } from "./founderos-bootstrap.js";
+export { founderOsRebindService } from "./founderos-rebind.js";
 export { inspectCompanyRepository, githubFounderOsRepositoryWriter } from "./founderos-github.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export * from "./founderos-content/index.js";
@@ -57,3 +58,4 @@ export { businessPlanService, businessPlanSystem, compileBusinessPlanTemplate, c
 export { pitchService, pitchSystem, compilePitchTemplate, compilePitch, validatePitch, compilePitchArtifacts, evaluatePitch, pitchFingerprint, bpwPitchResourcePack, pitchFrameworkResourcePack, PITCH_STEPS } from "./pitch.js";
 export { contentPublishingService, BlockedPostioPublisher, validateLinkedinCandidate, linkedinBody, assertPostioApproval, mapPostioResult, POSTIO_CONTRACT_STATUS, PUBLICATION_STATES } from "./content-publishing.js";
 export { contentGtmService, contentDistributionSystem, gtmCampaignSystem, contentGoalTemplates, contentResourcePacks, validateCampaign, analyzeCampaign, campaignArtifacts, SIGNAL_STRENGTH } from "./content-gtm.js";
+export { julesEnvProfileService } from "./jules-env-profiles.js";
