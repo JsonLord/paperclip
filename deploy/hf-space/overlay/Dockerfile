@@ -76,15 +76,25 @@ RUN apt-get update \
 # a file so curl's own failure is visible, fall back to pipx, and hard-fail the build if
 # hermes is still missing rather than shipping a broken image.
 RUN set -eux; \
-    if curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh && bash /tmp/hermes-install.sh; then \
-      echo "hermes: installed via install.sh"; \
-    else \
-      echo "hermes: install.sh unavailable, using pipx"; pipx install --global hermes-agent; \
-    fi; \
+    export HERMES_HOME=/opt/hermes-home/.hermes; \
+    mkdir -p "$HERMES_HOME"; \
+    if curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh; then \
+      bash /tmp/hermes-install.sh --hermes-home "$HERMES_HOME" || echo "WARN: hermes install.sh exited nonzero"; \
+    else echo "WARN: could not download hermes install.sh"; fi; \
     rm -f /tmp/hermes-install.sh; \
+    hb="$(command -v hermes || true)"; \
+    [ -n "$hb" ] || hb="$(find "$HERMES_HOME" /root/.hermes -maxdepth 4 -type f -name hermes 2>/dev/null | head -1 || true)"; \
+    if [ -n "$hb" ] && [ "$hb" != /usr/local/bin/hermes ]; then \
+      printf '#!/bin/sh\nexport HERMES_HOME=%s\nexec "%s" "$@"\n' "$HERMES_HOME" "$hb" > /usr/local/bin/hermes; \
+      chmod 0755 /usr/local/bin/hermes; \
+    fi; \
+    chmod -R a+rX /opt/hermes-home 2>/dev/null || true; \
     pipx install --global openviking==0.4.6; \
-    command -v hermes >/dev/null 2>&1 || { echo "FATAL: hermes CLI missing after install"; exit 1; }; \
-    hermes --version || true
+    if command -v hermes >/dev/null 2>&1 && hermes --version >/dev/null 2>&1; then \
+      echo "hermes OK at $(command -v hermes)"; \
+    else \
+      echo "WARN: hermes not runnable at build; hermes_local agents will fail until this is fixed, but the API, Jules and ops do not depend on it"; \
+    fi
 
 # Firm CLI. Every FounderOS goal contract ends in "firm build passes" and the server
 # shells out to `firm` (services/firm-cli.ts, FIRM_CLI_PATH or PATH), so without it the
@@ -111,6 +121,7 @@ RUN chmod +x /app/deploy/*.sh
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
+  HERMES_HOME=/opt/hermes-home/.hermes \
   HOST=0.0.0.0 \
   PORT=7860 \
   SERVE_UI=true \

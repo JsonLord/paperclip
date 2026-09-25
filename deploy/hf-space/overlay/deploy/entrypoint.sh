@@ -36,19 +36,21 @@ if [ -n "${BLABLADOR_TOKEN:-}" ] && [ -f /opt/hermes-home/.hermes/config.yaml ];
 fi
 
 # 1a-i) Hermes LLM routing ------------------------------------------------------
-# hermes-paperclip-adapter spawns the CLI with `env = { ...process.env }` and never
-# sets HOME, so Hermes reads $HOME/.hermes — not the baked /opt/hermes-home. Write
-# the config where it is actually read, and export the OpenAI-compatible variables
-# so the adapter's environment check (which inspects the *server's* process.env for
+# Hermes reads its config from $HERMES_HOME (the image sets HERMES_HOME so the CLI,
+# the app it was built with, and this config all agree on one node-readable location
+# instead of a per-user ~/.hermes that a non-interactive spawn never finds). Write the
+# config where it is actually read, and export the OpenAI-compatible variables so the
+# adapter's environment check (which inspects the *server's* process.env for
 # ANTHROPIC_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY) stops reporting no keys.
+HERMES_CFG_DIR="${HERMES_HOME:-$HOME/.hermes}"
 : "${OPENAI_COMPATIBLE_ENDPOINT:=https://api.helmholtz-blablador.fz-juelich.de/v1}"
 : "${OPENAI_MODEL:=alias-large}"
 if [ -n "${BLABLADOR_TOKEN:-}" ]; then
   export OPENAI_API_KEY="${OPENAI_API_KEY:-$BLABLADOR_TOKEN}"
   export OPENAI_BASE_URL="${OPENAI_BASE_URL:-$OPENAI_COMPATIBLE_ENDPOINT}"
   export OPENAI_MODEL OPENAI_COMPATIBLE_ENDPOINT
-  mkdir -p "$HOME/.hermes"
-  cat > "$HOME/.hermes/config.yaml" <<YAML
+  mkdir -p "$HERMES_CFG_DIR"
+  cat > "$HERMES_CFG_DIR/config.yaml" <<YAML
 model:
   provider: custom
   base_url: ${OPENAI_COMPATIBLE_ENDPOINT}
@@ -56,8 +58,8 @@ model:
   model: ${OPENAI_MODEL}
   api_key: ${BLABLADOR_TOKEN}
 YAML
-  chmod 600 "$HOME/.hermes/config.yaml"
-  log "hermes routed to ${OPENAI_MODEL} @ ${OPENAI_COMPATIBLE_ENDPOINT} (config at \$HOME/.hermes/config.yaml)"
+  chmod 600 "$HERMES_CFG_DIR/config.yaml"
+  log "hermes routed to ${OPENAI_MODEL} @ ${OPENAI_COMPATIBLE_ENDPOINT} (config at ${HERMES_CFG_DIR}/config.yaml)"
 else
   log "BLABLADOR_TOKEN not set — Hermes will fall back to its default model and report no API keys"
 fi
@@ -278,9 +280,9 @@ HERMES_DASHBOARD_PID=""
 : "${HERMES_DASHBOARD_PORT:=7861}"
 export HERMES_DASHBOARD_URL="${HERMES_DASHBOARD_URL:-http://${HERMES_DASHBOARD_HOST}:${HERMES_DASHBOARD_PORT}}"
 if command -v hermes >/dev/null 2>&1; then
-  mkdir -p "$HOME/.hermes"
+  mkdir -p "${HERMES_HOME:-$HOME/.hermes}"
   # Keep the dashboard bound to loopback; the Node app is the public reverse proxy.
-  hermes dashboard --host "$HERMES_DASHBOARD_HOST" --port "$HERMES_DASHBOARD_PORT" >"$HOME/.hermes/dashboard.log" 2>&1 &
+  hermes dashboard --host "$HERMES_DASHBOARD_HOST" --port "$HERMES_DASHBOARD_PORT" >"${HERMES_HOME:-$HOME/.hermes}/dashboard.log" 2>&1 &
   HERMES_DASHBOARD_PID=$!
   log "hermes dashboard started (pid=$HERMES_DASHBOARD_PID) on ${HERMES_DASHBOARD_URL}; proxied at /dashboard and /hammers"
 else
