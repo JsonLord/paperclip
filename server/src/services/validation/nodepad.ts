@@ -1,3 +1,4 @@
+import { authorizeWorkforceNodepad } from "../workforce/guards.js";
 import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
 import {
@@ -23,6 +24,8 @@ export interface NodepadBinding {
 }
 export interface NodepadProvider {
   mode: "fixture" | "live";
+  /** Explicit evidence/provenance contract; a hypothesis creation endpoint is insufficient. */
+  candidateContract?: "evidence-v1";
   read(binding: NodepadBinding, credential: string): Promise<unknown>;
   submitCandidate(
     binding: NodepadBinding,
@@ -102,7 +105,9 @@ export function nodepadHttpProvider(
         interviews: [],
         evidence: [],
         contradictions: [],
-        researchGaps: (brain.hypotheses || []).flatMap((h: any) => h.researchGaps || []),
+        researchGaps: (brain.hypotheses || []).flatMap(
+          (h: any) => h.researchGaps || [],
+        ),
         materialChanges: [],
         clocks: {
           lastInterviewAt: null,
@@ -123,7 +128,7 @@ export function nodepadHttpProvider(
           title: `Candidate ${input.candidate.idempotencyKey.slice(0, 8)}`,
           statement: input.candidate.summary,
           supportingEvidenceIds: [],
-          contradictingEvidenceIds: []
+          contradictingEvidenceIds: [],
         }),
       }).then((res: any) => ({
         candidateId: res.id,
@@ -292,6 +297,21 @@ export function nodepadService(
   }
   async function submit(companyId: string, actorId: string, input: unknown) {
     const candidate = nodepadCandidateSchema.parse(input);
+    const specialist = await authorizeWorkforceNodepad(
+      db,
+      companyId,
+      actorId,
+      "evidence_submission",
+      candidate.hypothesisId,
+    );
+    if (
+      specialist &&
+      provider.mode === "live" &&
+      provider.candidateContract !== "evidence-v1"
+    )
+      throw conflict(
+        "READY_CONFIG: Live Nodepad evidence/provenance candidate contract must be verified; creating hypotheses is not evidence submission",
+      );
     const b = await binding(companyId);
     if (!b) throw notFound("Nodepad binding missing; READY_CONFIG");
     if (!b.snapshot?.hypotheses.some((h) => h.id === candidate.hypothesisId))

@@ -1,3 +1,4 @@
+import { workforceImportService } from "../workforce/importer.js";
 import { evidenceGate } from "./evidence-policy.js";
 import { isDeepStrictEqual } from "node:util";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -135,6 +136,10 @@ export function validationProgrammeService(db: Db) {
         .update(companies)
         .set({ mode: "idea_validation", updatedAt: new Date() })
         .where(eq(companies.id, companyId));
+      await workforceImportService(tx as unknown as Db).importWorkforce(
+        companyId,
+        actorId,
+      );
       await svc.audit(companyId, actorId, "programme.started", programme.id);
       return programme;
     });
@@ -425,6 +430,9 @@ export function validationProgrammeService(db: Db) {
           r.status !== "resolved",
       ),
       decisions: recent.filter((r) => r.kind === "decision"),
+      agencyCandidates: recent
+        .filter((r) => r.kind === "agency_candidate")
+        .slice(0, 10),
       latestReporter: recent.find((r) => r.kind === "reporter") ?? null,
       latestCycle: recent.find((r) => r.kind === "management_cycle") ?? null,
       adaptations: recent.filter((r) => r.kind === "adaptation"),

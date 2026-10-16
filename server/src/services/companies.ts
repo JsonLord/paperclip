@@ -1,6 +1,7 @@
 import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  workforceActivations,workforceMembers,workforceImports,
   companies,
   validationProgrammes,
   companyLogos,
@@ -257,6 +258,9 @@ export function companyService(db: Db) {
 
     remove: (id: string) =>
       db.transaction(async (tx) => {
+        await tx.delete(workforceActivations).where(eq(workforceActivations.companyId,id));
+        await tx.delete(workforceMembers).where(eq(workforceMembers.companyId,id));
+        await tx.delete(workforceImports).where(eq(workforceImports.companyId,id));
         // Delete from child tables in dependency order
         await tx.delete(validationProgrammes).where(eq(validationProgrammes.companyId, id));
         await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));

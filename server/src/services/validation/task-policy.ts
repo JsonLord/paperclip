@@ -1,3 +1,6 @@
+import { posix } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { verifyWorkforceDispatch } from "../workforce/guards.js";
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
@@ -75,16 +78,48 @@ export async function inspectValidationDispatch(
       !approval ||
       approval.payload?.action !== "customer_interaction" ||
       !issue.id ||
-      approval.payload?.issueId !== issue.id
+      (approval.payload?.issueId !== issue.id &&
+        !(
+          ceoId &&
+          (await verifyWorkforceDispatch(db, companyId, ceoId, issue.id))
+            ?.activation.need.eventKey === approval.payload?.eventKey &&
+          approval.payload?.hypothesisId === task.hypothesisIds[0]
+        ))
     )
       return { runtime: null, blocker: "BLOCKED_ON_COMMERCIAL_APPROVAL" };
   }
   const runtime = resolveValidationRuntime(task);
+  if (
+    runtime.runtime === "jules" &&
+    task.writeScopes.some(
+      (scope) =>
+        scope.includes("\\") ||
+        scope.includes("..") ||
+        scope.startsWith("/") ||
+        !/^(site|website|frontend|ui|public|assets|landing|campaign|docs|experiments|prototype)(\/|$)/.test(
+          posix.normalize(scope),
+        ),
+    )
+  )
+    return { runtime: null, blocker: "FOUNDER_ENGINEERING_DEPENDENCY" };
   if (!runtime.runtime) return runtime;
   const [binding] = await db
     .select()
     .from(nodepadBindings)
     .where(eq(nodepadBindings.companyId, companyId));
+  if (ceoId && task.workClass === "report") {
+    const workforce = await verifyWorkforceDispatch(
+      db,
+      companyId,
+      ceoId,
+      issue.id ?? null,
+    );
+    if (
+      workforce?.member.agencyId === "founder-intelligence-reporter" &&
+      workforce.activation.need.eventType === "reporting_tick"
+    )
+      return { runtime: "github-actions", blocker: null };
+  }
   const gate = validationTaskGate(
     task,
     binding?.snapshot ?? null,
@@ -107,6 +142,20 @@ export async function assertValidationIssue(
   },
 ) {
   if (!issue.assigneeAgentId) return;
+  const workforce = await verifyWorkforceDispatch(
+    db,
+    companyId,
+    issue.assigneeAgentId,
+    issue.id ?? null,
+  );
+  if (
+    workforce &&
+    !isDeepStrictEqual(
+      workforce.activation.need.validationTask,
+      validationTaskSchema.parse(issue.validationTask),
+    )
+  )
+    throw unprocessable("Task intent changed after workforce authorization");
   const dispatch = await inspectValidationDispatch(
     db,
     companyId,
