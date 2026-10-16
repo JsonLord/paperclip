@@ -1,3 +1,4 @@
+import { startGithubActionsReconciler } from "./services/validation/github-actions.js";
 /// <reference path="./types/express.d.ts" />
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
@@ -512,6 +513,7 @@ export async function startServer(): Promise<StartedServer> {
     resolveSessionFromHeaders,
   });
 
+  const stopGithubActionsReconciler = startGithubActionsReconciler(db);
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
     .then((result) => {
       if (result.reconciled > 0) {
@@ -674,6 +676,7 @@ export async function startServer(): Promise<StartedServer> {
   
   if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
+      stopGithubActionsReconciler();
       logger.info({ signal }, "Stopping embedded PostgreSQL");
       try {
         await embeddedPostgres?.stop();

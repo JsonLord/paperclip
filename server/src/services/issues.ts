@@ -1,3 +1,5 @@
+import { validationProgrammes } from "@paperclipai/db";
+import { assertValidationIssue } from "./validation/task-policy.js";
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -679,6 +681,7 @@ export function issueService(db: Db) {
       companyId: string,
       data: Omit<typeof issues.$inferInsert, "companyId"> & { labelIds?: string[] },
     ) => {
+      await assertValidationIssue(db, companyId, data);
       const { labelIds: inputLabelIds, ...issueData } = data;
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
       if (!isolatedWorkspacesEnabled) {
@@ -790,6 +793,11 @@ export function issueService(db: Db) {
         .where(eq(issues.id, id))
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
+      if (data.status === "done" || data.status === "cancelled" || data.hiddenAt) {
+        const direction = await db.select().from(validationProgrammes).where(and(eq(validationProgrammes.companyId, existing.companyId), eq(validationProgrammes.directionIssueId, id))).then(rows => rows[0]);
+        if (direction) throw unprocessable("Founder Direction is a persistent strategy thread");
+      }
+      await assertValidationIssue(db, existing.companyId, { ...existing, ...data });
 
       const { labelIds: nextLabelIds, ...issueData } = data;
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;

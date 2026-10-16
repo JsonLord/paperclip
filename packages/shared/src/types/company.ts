@@ -3,6 +3,7 @@ import type { CompanyStatus, PauseReason } from "../constants.js";
 export interface Company {
   id: string;
   name: string;
+  mode?: "legacy" | "idea_validation";
   description: string | null;
   status: CompanyStatus;
   pauseReason: PauseReason | null;

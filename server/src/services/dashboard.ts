@@ -1,3 +1,4 @@
+import { validationProgrammeService } from "./validation/programmes.js";
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, approvals, companies, costEvents, issues } from "@paperclipai/db";
@@ -82,7 +83,10 @@ export function dashboardService(db: Db) {
           : 0;
       const budgetOverview = await budgets.overview(companyId);
 
+      const programme = company.mode === "idea_validation" ? await validationProgrammeService(db).get(companyId) : null;
+      const validation = programme ? await validationProgrammeService(db).summary(companyId) : null;
       return {
+        ...(validation ? { validationProgramme: { phase:validation.programme.phase,activeDays:validation.clock.activeDays,pausedDays:validation.clock.pausedDays,warningCodes:validation.diagnostics?.warnings.map(w=>w.code) ?? [] } } : {}),
         companyId,
         agents: {
           active: agentCounts.active,

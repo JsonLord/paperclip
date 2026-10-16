@@ -1,10 +1,11 @@
-import { and, eq, gt, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, isNotNull, or, lte, sql } from "drizzle-orm";
 import { JULES_OUTCOME_TEMPLATES, type JulesSessionSpec } from "@paperclipai/adapter-jules";
 import type { Db } from "@paperclipai/db";
 import {
   companyJulesSources,
   julesCapacityEvents,
   julesProfiles,
+  julesPools,
   julesProfileSources,
   julesRepositoryLeases,
   julesSessions,
@@ -15,6 +16,15 @@ import { secretService } from "./secrets.js";
 const ACTIVE_SESSION_STATES = ["DISPATCHING", "QUEUED", "PLANNING", "AWAITING_PLAN_APPROVAL", "AWAITING_USER_FEEDBACK", "IN_PROGRESS", "PAUSED", "REVISION_REQUESTED"];
 const START_EVENTS = ["session_started", "session_retry_started"];
 const HEALTHY = "active";
+
+export function countJulesStarts(events: Array<{ eventType: string; sessionId?: string | null }>) {
+  const sessions = new Set<string>();
+  let anonymous = 0;
+  for (const event of events) if (START_EVENTS.includes(event.eventType)) {
+    if (event.sessionId) sessions.add(event.sessionId); else anonymous++;
+  }
+  return sessions.size + anonymous;
+}
 
 export interface JulesAdmissionRequest {
   companyId: string;
@@ -49,7 +59,7 @@ export function calculateJulesProfileCapacity(input: {
   sessionStartWindowSec: number;
   concurrentSessionLimit: number;
   reserveSessionStarts: number;
-  events: Array<{ eventType: string; occurredAt: Date; companyId: string }>;
+  events: Array<{ eventType: string; occurredAt: Date; companyId: string; sessionId?: string | null }>;
   activeSessionCount: number;
   activeReservationCount?: number;
   companyId: string;
@@ -61,7 +71,7 @@ export function calculateJulesProfileCapacity(input: {
 }): JulesProfileCapacity {
   const windowStart = input.now.getTime() - input.sessionStartWindowSec * 1000;
   const events = input.events.filter((event) => event.occurredAt.getTime() >= windowStart && event.occurredAt.getTime() <= input.now.getTime());
-  const startsInWindow = events.filter((event) => START_EVENTS.includes(event.eventType)).length;
+  const startsInWindow = countJulesStarts(events);
   const activeSessions = input.activeSessionCount + (input.activeReservationCount ?? 0);
   return {
     profileId: input.profileId,
@@ -106,7 +116,8 @@ function scopeRoot(scope: string): { prefix: string; recursive: boolean } {
   const normalized = normalizeScope(scope);
   const wildcard = normalized.search(/[?*[]/);
   if (wildcard < 0) return { prefix: normalized, recursive: false };
-  return { prefix: normalized.slice(0, wildcard).replace(/\/$/, ""), recursive: true };
+  const fixed = normalized.slice(0, wildcard);
+  return { prefix: fixed.endsWith("/") ? fixed.replace(/\/$/, "") : fixed.slice(0, Math.max(0, fixed.lastIndexOf("/"))), recursive: true };
 }
 
 export function writeScopesOverlap(left: string[], right: string[]): boolean {
@@ -220,32 +231,43 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
       const profileIds = mappings.map((item) => item.profileId);
       const profiles = await tx.select().from(julesProfiles).where(inArray(julesProfiles.id, profileIds));
       const activeLeases = await tx.select().from(julesRepositoryLeases).where(and(
-        eq(julesRepositoryLeases.companyId, request.companyId),
-        eq(julesRepositoryLeases.repository, source.repository),
+        sql`lower(${julesRepositoryLeases.repository}) = lower(${source.repository})`,
         isNull(julesRepositoryLeases.releasedAt),
-        gt(julesRepositoryLeases.expiresAt, now),
+        or(isNotNull(julesRepositoryLeases.sessionId), gt(julesRepositoryLeases.expiresAt, now)),
       ));
       const writeConflict = activeLeases.some((lease) => writeScopesOverlap(request.writeScopes, lease.writeScopes));
-      const burstLimit = Math.max(1, Number(process.env.JULES_COMPANY_WRITE_BURST || 2));
-      if (writeConflict || activeLeases.length >= burstLimit) {
-        return denial("WRITE_SCOPE_CONFLICT", writeConflict ? "An active Jules lease overlaps the requested write scope" : "Company repository write concurrency is exhausted", []);
+      if (!request.writeScopes.length || writeConflict) {
+        return denial("WRITE_SCOPE_CONFLICT", "An active Jules lease overlaps the requested write scope or no write scope is declared", []);
+      }
+      // All physical pools share one Paperclip validation budget, never an engineering reserve.
+      // This also fails closed when several API keys belong to the same physical account.
+      const pools = profiles.some(p => p.poolId) ? await tx.select().from(julesPools) : [];
+      if (pools.length) {
+        const events = await tx.select().from(julesCapacityEvents).where(and(gte(julesCapacityEvents.occurredAt, new Date(now.getTime() - 86_400_000)), lte(julesCapacityEvents.occurredAt, now)));
+        const reservations = await tx.select().from(julesRepositoryLeases).where(and(isNull(julesRepositoryLeases.releasedAt), isNull(julesRepositoryLeases.sessionId), gt(julesRepositoryLeases.expiresAt, now)));
+        if (countJulesStarts(events) + reservations.length >= 90) return denial("QUOTA_EXHAUSTED", "Paperclip's 90 validation-production starts are exhausted", []);
       }
 
       const capacities: JulesProfileCapacity[] = [];
       const eligible: Array<{ profile: typeof julesProfiles.$inferSelect; capacity: JulesProfileCapacity; apiKey: string }> = [];
       for (const profile of profiles) {
-        const windowStart = new Date(now.getTime() - profile.sessionStartWindowSec * 1000);
-        const events = await tx.select().from(julesCapacityEvents).where(and(eq(julesCapacityEvents.profileId, profile.id), gte(julesCapacityEvents.occurredAt, windowStart), lte(julesCapacityEvents.occurredAt, now)));
-        const sessions = await tx.select().from(julesSessions).where(and(eq(julesSessions.profileId, profile.id), inArray(julesSessions.status, ACTIVE_SESSION_STATES)));
-        const reservations = activeLeases.filter((lease) => lease.profileId === profile.id && !lease.sessionId).length;
+        const pool = pools.find(p => p.id === profile.poolId);
+        if (profile.poolId && !pool) continue;
+        const poolProfiles = pool ? await tx.select().from(julesProfiles).where(eq(julesProfiles.poolId, pool.id)) : [profile];
+        const poolIds = poolProfiles.map(p => p.id);
+        const windowStart = new Date(now.getTime() - (pool?.windowSec ?? profile.sessionStartWindowSec) * 1000);
+        const events = await tx.select().from(julesCapacityEvents).where(and(inArray(julesCapacityEvents.profileId, poolIds), gte(julesCapacityEvents.occurredAt, windowStart), lte(julesCapacityEvents.occurredAt, now)));
+        const sessions = await tx.select().from(julesSessions).where(and(inArray(julesSessions.profileId, poolIds), inArray(julesSessions.status, ACTIVE_SESSION_STATES)));
+        const reservationRows = await tx.select().from(julesRepositoryLeases).where(and(inArray(julesRepositoryLeases.profileId, poolIds), isNull(julesRepositoryLeases.releasedAt), isNull(julesRepositoryLeases.sessionId), gt(julesRepositoryLeases.expiresAt, now)));
+        const reservations = reservationRows.filter(lease => !lease.sessionId).length;
         const readiness = profile.capabilityReadiness ?? {};
         const requiredCapabilitiesPresent = requiredCapabilities.every((capability) => profile.capabilities.includes(capability) && !["missing", "error"].includes(readiness[capability]?.status ?? "configured"));
         const capacity = calculateJulesProfileCapacity({
           profileId: profile.id,
-          sessionStartLimit: profile.sessionStartLimit,
-          sessionStartWindowSec: profile.sessionStartWindowSec,
-          concurrentSessionLimit: profile.concurrentSessionLimit,
-          reserveSessionStarts: profile.reserveSessionStarts,
+          sessionStartLimit: pool?.dailyStarts ?? profile.sessionStartLimit,
+          sessionStartWindowSec: pool?.windowSec ?? profile.sessionStartWindowSec,
+          concurrentSessionLimit: pool?.concurrency ?? profile.concurrentSessionLimit,
+          reserveSessionStarts: pool ? 0 : profile.reserveSessionStarts,
           events,
           activeSessionCount: sessions.length,
           activeReservationCount: reservations,
@@ -254,8 +276,9 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
           requiredCapabilitiesPresent,
           profileHealth: profile.status,
         });
+        capacity.remainingRollingStarts = Math.max(0, capacity.remainingRollingStarts - reservations);
         capacities.push(capacity);
-        if (!profile.enabled || !requiredCapabilitiesPresent || capacity.remainingConcurrency <= 0 || capacity.remainingRollingStarts <= 0 || (!request.urgent && capacity.remainingRollingStarts <= profile.reserveSessionStarts)) continue;
+        if (!profile.enabled || !requiredCapabilitiesPresent || capacity.remainingConcurrency <= 0 || capacity.remainingRollingStarts <= 0 || (!pool && !request.urgent && capacity.remainingRollingStarts <= profile.reserveSessionStarts)) continue;
         if (![HEALTHY, "auth_required"].includes(profile.status.toLowerCase())) continue;
         try {
           const apiKey = await (options.resolveSecret

@@ -1,3 +1,6 @@
+import { inspectValidationDispatch } from "./validation/task-policy.js";
+import { assembleCeoContext } from "./validation/ceo-context.js";
+import { validationProgrammes } from "@paperclipai/db";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
@@ -1679,7 +1682,7 @@ export function heartbeatService(db: Db) {
     activeRunExecutions.add(run.id);
 
     try {
-    const agent = await getAgent(run.agentId);
+    let agent = await getAgent(run.agentId);
     if (!agent) {
       await setRunStatus(runId, "failed", {
         error: "Agent not found",
@@ -1695,6 +1698,23 @@ export function heartbeatService(db: Db) {
       return;
     }
 
+    const programmeForRun = await db.select().from(validationProgrammes).where(eq(validationProgrammes.companyId, agent.companyId)).then(r => r[0]);
+    if (programmeForRun?.ceoAgentId === agent.id && !readNonEmptyString(parseObject(run.contextSnapshot).issueId)) {
+      const managementContext = {...parseObject(run.contextSnapshot),issueId:programmeForRun.directionIssueId};
+      await db.update(heartbeatRuns).set({contextSnapshot:managementContext}).where(eq(heartbeatRuns.id,run.id));
+      run = {...run,contextSnapshot:managementContext};
+    }
+    const assignedId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
+    if (programmeForRun && !assignedId && programmeForRun.ceoAgentId !== agent.id) throw new Error("Validation dispatch requires a typed assigned issue");
+    if (assignedId) {
+      const assigned = await db.select().from(issues).where(and(eq(issues.id, assignedId), eq(issues.companyId, agent.companyId))).then(r => r[0]);
+      if (!assigned && programmeForRun) throw new Error("Validation assignment not found in this company");
+      if (assigned) {
+        const dispatch = await inspectValidationDispatch(db, agent.companyId, assigned, agent.id);
+        if (dispatch?.blocker) throw new Error(`Validation dispatch blocked: ${dispatch.blocker}`);
+        if (dispatch?.runtime) agent = { ...agent, adapterType: dispatch.runtime };
+      }
+    }
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
     const taskKey = deriveTaskKey(context, null);
@@ -1751,7 +1771,8 @@ export function heartbeatService(db: Db) {
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
-    const config = parseObject(agent.adapterConfig);
+    const baseConfig = parseObject(agent.adapterConfig);
+    const config = { ...baseConfig, ...parseObject(parseObject(baseConfig.validationRuntimes)[agent.adapterType]) };
     const executionWorkspaceMode = resolveExecutionWorkspaceMode({
       projectPolicy: projectExecutionWorkspacePolicy,
       issueSettings: issueExecutionWorkspaceSettings,
@@ -2208,6 +2229,11 @@ export function heartbeatService(db: Db) {
         }
       };
 
+      if (programmeForRun && agent.adapterType === "github-actions") {
+        const binding = programmeForRun.runtimeBindings["github-actions"];
+        if (!binding) throw new Error("READY_CONFIG: founder must configure the company GitHub Actions runtime");
+        resolvedConfig = { ...binding };
+      }
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
@@ -2239,7 +2265,7 @@ export function heartbeatService(db: Db) {
       // shell and reaches the repo through the REST API with curl. The grant is narrow
       // by adapter: only hermes_local receives it, and a deployment-scoped token is
       // preferred over the broad one. It is injected at runtime and never persisted.
-      if (agent.adapterType === "hermes_local") {
+      if (agent.adapterType === "hermes_local" && !programmeForRun) {
         const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
         if (githubToken) {
           resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
@@ -2247,6 +2273,12 @@ export function heartbeatService(db: Db) {
         }
       }
       resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType).config;
+      const programme = await db.select().from(validationProgrammes).where(eq(validationProgrammes.companyId, agent.companyId)).then(r => r[0]);
+      if (programme?.ceoAgentId === agent.id) {
+        const packet = await assembleCeoContext(db, agent.companyId);
+        context.ceoContextPacket = packet;
+        resolvedConfig = { ...resolvedConfig, promptTemplate: `${String(resolvedConfig.promptTemplate ?? "")}\n\nCurrent deterministic CEO context packet:\n${JSON.stringify(packet)}` };
+      }
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);

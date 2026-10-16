@@ -1,5 +1,6 @@
 export interface DashboardSummary {
   companyId: string;
+  validationProgramme?: { phase: string; activeDays: number; pausedDays: number; warningCodes: string[] };
   agents: {
     active: number;
     running: number;

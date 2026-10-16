@@ -39,7 +39,7 @@ describe("jules env profiles", () => {
 
     const profiles = store.rows.get(julesProfiles) ?? [];
     expect(profiles.map((p) => p.name).sort()).toEqual(["jules-company-1-1", "jules-company-1-2"]);
-    expect(profiles.every((p) => p.sessionStartLimit === 15 && p.sessionStartWindowSec === 86_400)).toBe(true);
+    expect(profiles.every((p) => p.sessionStartLimit === 90 && p.sessionStartWindowSec === 86_400)).toBe(true);
     // each profile points at a secret that exists for this company
     const secretIds = new Set(secrets.map((s) => s.id));
     expect(profiles.every((p) => secretIds.has(p.secretRef))).toBe(true);

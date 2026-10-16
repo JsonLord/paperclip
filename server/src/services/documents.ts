@@ -1,8 +1,8 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { documentRevisions, documents, issueDocuments, issues } from "@paperclipai/db";
-import { issueDocumentKeySchema } from "@paperclipai/shared";
-import { conflict, notFound, unprocessable } from "../errors.js";
+import { documentRevisions, documents, issueDocuments, issues, validationProgrammes } from "@paperclipai/db";
+import { issueDocumentKeySchema, founderStatementSchema } from "@paperclipai/shared";
+import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 
 function normalizeDocumentKey(key: string) {
   const normalized = key.trim().toLowerCase();
@@ -223,10 +223,24 @@ export function documentService(db: Db) {
         .where(eq(issues.id, input.issueId))
         .then((rows) => rows[0] ?? null);
       if (!issue) throw notFound("Issue not found");
+      let statementConstraints: string[] | null = null;
+      if (key === "founder-statement") {
+        const [programme] = await db.select().from(validationProgrammes).where(eq(validationProgrammes.companyId, issue.companyId));
+        if (programme) {
+          if (issue.id !== programme.directionIssueId) throw forbidden("Founder Statement belongs on Founder Direction");
+          if (!input.createdByUserId && input.createdByAgentId !== programme.ceoAgentId) throw forbidden("Programme CEO or founder required");
+          let parsed;
+          try { parsed = founderStatementSchema.parse(JSON.parse(input.body)); } catch { throw unprocessable("Founder Statement must match the structured strategic contract"); }
+          if (parsed.visionAnchor !== programme.visionGoalId) throw forbidden("Founder Statement must anchor to the current root Vision");
+          if (!input.createdByUserId && JSON.stringify(parsed.constraints) !== JSON.stringify(programme.founderConstraints)) throw forbidden("Founder constraints require founder approval");
+          statementConstraints = parsed.constraints;
+        }
+      }
 
       try {
         return await db.transaction(async (tx) => {
           const now = new Date();
+          if (statementConstraints) await tx.update(validationProgrammes).set({founderConstraints:statementConstraints,updatedAt:now}).where(eq(validationProgrammes.companyId,issue.companyId));
           const existing = await tx
             .select({
               id: documents.id,

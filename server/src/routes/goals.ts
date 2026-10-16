@@ -1,13 +1,19 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import { companies, type Db } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import { createGoalSchema, updateGoalSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function goalRoutes(db: Db) {
   const router = Router();
   const svc = goalService(db);
+  async function guardVision(req: import("express").Request, companyId: string, root: boolean) {
+    if (!root || req.actor.type === "board") return;
+    const [company] = await db.select({mode:companies.mode}).from(companies).where(eq(companies.id,companyId));
+    if (company?.mode === "idea_validation") assertBoard(req);
+  }
 
   router.get("/companies/:companyId/goals", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -30,6 +36,7 @@ export function goalRoutes(db: Db) {
   router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    await guardVision(req,companyId,!req.body.parentId);
     const goal = await svc.create(companyId, req.body);
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -53,6 +60,7 @@ export function goalRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    await guardVision(req,existing.companyId,!existing.parentId || req.body.parentId === null);
     const goal = await svc.update(id, req.body);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });
@@ -82,6 +90,7 @@ export function goalRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    await guardVision(req,existing.companyId,!existing.parentId);
     const goal = await svc.remove(id);
     if (!goal) {
       res.status(404).json({ error: "Goal not found" });

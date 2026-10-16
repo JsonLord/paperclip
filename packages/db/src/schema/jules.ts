@@ -1,3 +1,4 @@
+import { julesPools } from "./validation.js";
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
@@ -9,6 +10,7 @@ import { issues } from "./issues.js";
 export const julesProfiles = pgTable("jules_profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  poolId: uuid("pool_id").notNull().default("00000000-0000-4000-8000-000000000090").references(() => julesPools.id),
   status: text("status").notNull().default("active"),
   enabled: boolean("enabled").notNull().default(true),
   plan: text("plan"),

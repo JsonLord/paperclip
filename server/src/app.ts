@@ -1,3 +1,5 @@
+import { registerGithubActionsAdapter } from "./adapters/registry.js";
+import { validationRoutes } from "./routes/validation.js";
 import express, { Router, type Request as ExpressRequest } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -91,6 +93,7 @@ export async function createApp(
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
 ) {
+  registerGithubActionsAdapter(db);
   const app = express();
 
   app.use(express.json({
@@ -153,6 +156,7 @@ export async function createApp(
     }),
   );
   api.use("/companies", companyRoutes(db));
+  api.use(validationRoutes(db));
   api.use("/companies", firmRoutes(db));
   api.use(julesRoutes(db));
   api.use(customerDiscoveryRoutes(db));

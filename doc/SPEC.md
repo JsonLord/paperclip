@@ -1,3 +1,5 @@
+> The opt-in idea-validation company workflow is governed by [VALIDATION-CONTROL-PLANE.md](./VALIDATION-CONTROL-PLANE.md); its supplied requirements supersede production-engineering assumptions here. Existing legacy workflows retain their contracts.
+
 # Paperclip Specification
 
 Target specification for the Paperclip control plane. Living document — updated incrementally during spec interviews.
