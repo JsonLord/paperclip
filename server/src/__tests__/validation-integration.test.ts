@@ -491,6 +491,58 @@ describe("Nodepad isolation and candidate submission", () => {
       ),
     ).rejects.toThrow();
   });
+
+  it("proves A/B isolation across completely different company bindings", async () => {
+    const compA = await programme();
+    const compB = await programme();
+
+    // Bind A to workspace-A
+    const svc = nodepadService(db, fixtureProvider({
+      companyId: compA.c.id, workspaceId: "workspace-A",
+      revision: "1", capturedAt: new Date().toISOString(), hypotheses: [], interviews: [], evidence: [], contradictions: [], researchGaps: [], experiments: [], materialChanges: [], clocks: { lastInterviewAt: null, lastCustomerInteractionAt: null, lastDirectEvidenceAt: null, lastMaterialMovementAt: null, lastExperimentAt: null }
+    }), async () => "fixture-a");
+    await svc.bind(compA.c.id, { baseUrl: "https://nodepad.example", workspaceId: "workspace-A", apiKeySecretRef: randomUUID() });
+
+    // Bind B to workspace-B
+    const svcB = nodepadService(db, fixtureProvider({
+      companyId: compB.c.id, workspaceId: "workspace-B",
+      revision: "1", capturedAt: new Date().toISOString(), hypotheses: [], interviews: [], evidence: [], contradictions: [], researchGaps: [], experiments: [], materialChanges: [], clocks: { lastInterviewAt: null, lastCustomerInteractionAt: null, lastDirectEvidenceAt: null, lastMaterialMovementAt: null, lastExperimentAt: null }
+    }), async () => "fixture-b");
+    await svcB.bind(compB.c.id, { baseUrl: "https://nodepad.example", workspaceId: "workspace-B", apiKeySecretRef: randomUUID() });
+
+    const syncA = await svc.sync(compA.c.id);
+    expect(syncA.snapshot.workspaceId).toBe("workspace-A");
+
+    const syncB = await svcB.sync(compB.c.id);
+    expect(syncB.snapshot.workspaceId).toBe("workspace-B");
+
+    await expect(svcB.sync(compA.c.id)).rejects.toThrow(/boundary/);
+  });
+
+  it("provides Paperclip-side write idempotency for submitted candidates", async () => {
+    const f = await programme();
+    const { service, state } = await bind(f);
+    const candidatePayload = {
+      idempotencyKey: "test-idemp-123",
+      hypothesisId: state.hypotheses[0].id,
+      sourceRef: "test-ref",
+      contentHash: "a".repeat(64),
+      pipelineRunRef: "run-ref",
+      summary: "test summary"
+    };
+
+    const firstSubmit = await service.submit(f.c.id, f.p.ceoAgentId, candidatePayload);
+    expect(firstSubmit.status).toBe("submitted");
+
+    const secondSubmit = await service.submit(f.c.id, f.p.ceoAgentId, candidatePayload);
+    expect(secondSubmit.id).toBe(firstSubmit.id);
+    expect(secondSubmit.status).toBe("submitted");
+
+    await expect(service.submit(f.c.id, f.p.ceoAgentId, {
+      ...candidatePayload,
+      summary: "Different content but same key"
+    })).rejects.toThrow(/Idempotency key reused/);
+  });
   it("submits idempotent candidates with provenance and forbids qualification fields", async () => {
     const f = await programme(),
       { service, state } = await bind(f);

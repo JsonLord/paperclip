@@ -1,0 +1,41 @@
+name: Validation analysis
+run-name: "paperclip:${{ inputs.paperclip_run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      paperclip_run_id:
+        type: string
+        required: true
+      force_failure:
+        type: string
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Simulate Validation Qualification
+        id: sim
+        run: |
+          echo "Simulating external validation task for paperclip run: ${{ inputs.paperclip_run_id }}"
+          if [ "${{ inputs.force_failure }}" = "true" ]; then
+            echo "Forcing failure for testing purposes"
+            exit 1
+          fi
+
+          mkdir -p output
+          echo '{"result": "success", "confidence": 95, "finding": "Live qualification confirmed"}' > output/result.json
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-result-${{ inputs.paperclip_run_id }}
+          path: output/result.json
