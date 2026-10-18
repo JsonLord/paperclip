@@ -4,19 +4,47 @@ import { execute } from "./execute.js";
 afterEach(() => vi.unstubAllGlobals());
 
 const run = async (context: Record<string, unknown>) => {
-  const fetchMock = vi.fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify({ id: "remote-1", state: "QUEUED" }), { status: 200 }))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ activities: [] }), { status: 200 }));
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: "remote-1", state: "QUEUED" }), {
+        status: 200,
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ activities: [] }), { status: 200 }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await execute({
     runId: "run-1",
-    agent: { id: "agent-1", companyId: "company-1", name: "Market Analyst", adapterType: "jules", adapterConfig: {} },
-    runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
-    config: { env: { JULES_API_KEY: "secret" }, source: "sources/acme", repository: "acme/co", outcomeTemplate: "bootstrap", maxWaitSec: 0 },
+    agent: {
+      id: "agent-1",
+      companyId: "company-1",
+      name: "Market Analyst",
+      adapterType: "jules",
+      adapterConfig: {},
+    },
+    runtime: {
+      sessionId: null,
+      sessionParams: null,
+      sessionDisplayId: null,
+      taskKey: null,
+    },
+    config: {
+      env: { JULES_API_KEY: "secret" },
+      source: "sources/acme",
+      repository: "acme/co",
+      outcomeTemplate: "bootstrap",
+      maxWaitSec: 0,
+    },
     context,
     onLog: async () => {},
+    onMeta: async () => {},
   });
-  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body ?? "{}")) as { prompt?: string; title?: string };
+  const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body ?? "{}")) as {
+    prompt?: string;
+    title?: string;
+  };
   return body;
 };
 

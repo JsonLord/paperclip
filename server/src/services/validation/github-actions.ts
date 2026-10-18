@@ -1,3 +1,4 @@
+import { isEngineeringDependency } from "./engineering-boundary.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   activityLog,
@@ -6,6 +7,7 @@ import {
   heartbeatRuns,
   issueWorkProducts,
   agents,
+  issues,
   type Db,
 } from "@paperclipai/db";
 import { z } from "zod";
@@ -97,21 +99,27 @@ export function githubActionsProvider(
       );
     },
     find: async (repo, workflow, correlation, token) => {
-      const response = await request(
-        `${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?event=workflow_dispatch&per_page=100`,
-        token,
-      );
-      const data = (await response.json()) as {
-        workflow_runs: ActionRemoteRun[];
-      };
-      const matches = data.workflow_runs.filter(
-        (r) => r.display_title === correlation,
-      );
-      if (matches.length > 1)
-        throw new Error(
-          "Ambiguous GitHub run correlation; manual reconciliation required",
+      const matches: ActionRemoteRun[] = [];
+      for (let page = 1; page <= 100; page++) {
+        const response = await request(
+          `${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?event=workflow_dispatch&per_page=100&page=${page}`,
+          token,
         );
-      return matches[0] ?? null;
+        const data = (await response.json()) as {
+          workflow_runs: ActionRemoteRun[];
+        };
+        matches.push(
+          ...data.workflow_runs.filter((r) => r.display_title === correlation),
+        );
+        if (matches.length > 1)
+          throw new Error(
+            "Ambiguous GitHub run correlation; manual reconciliation required",
+          );
+        if (data.workflow_runs.length < 100) return matches[0] ?? null;
+      }
+      throw new Error(
+        "Run correlation pagination exceeded safe bound; manual reconciliation required",
+      );
     },
     get: async (repo, id, token) =>
       (
@@ -140,7 +148,12 @@ export function githubActionsProvider(
 export function normalizeActionsResult(remote: ActionRemoteRun) {
   return {
     externalRunId: String(remote.id),
-    status: remote.status === "completed" ? "completed" : "running",
+    status:
+      remote.status === "completed"
+        ? "completed"
+        : remote.status === "queued"
+          ? "queued"
+          : "running",
     conclusion: remote.conclusion,
     succeeded: remote.status === "completed" && remote.conclusion === "success",
     url: remote.html_url,
@@ -164,6 +177,32 @@ export function githubActionsService(
         ),
       )
       .then((r) => r[0]);
+    const [run] = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.id, ctx.runId),
+          eq(heartbeatRuns.companyId, ctx.agent.companyId),
+          eq(heartbeatRuns.agentId, ctx.agent.id),
+        ),
+      );
+    if (!run)
+      throw conflict("Actions run does not belong to this company and agent");
+    if (ctx.context.issueId) {
+      const [issue] = await db
+        .select()
+        .from(issues)
+        .where(
+          and(
+            eq(issues.id, String(ctx.context.issueId)),
+            eq(issues.companyId, ctx.agent.companyId),
+          ),
+        );
+      if (!issue) throw conflict("Actions issue is outside the company");
+      if (isEngineeringDependency(issue))
+        throw conflict("FOUNDER_ENGINEERING_DEPENDENCY");
+    }
     if (!binding || binding.repository !== config.repository)
       throw conflict(
         "Actions repository is not the company's bound artifact repository",
@@ -174,6 +213,8 @@ export function githubActionsService(
     ctx: AdapterExecutionContext,
   ): Promise<AdapterExecutionResult> {
     const config = await configFor(ctx);
+    if (config.workforcePacketInput === "paperclip_run_id")
+      throw conflict("Correlation input is reserved");
     if (ctx.context.workforcePacket && !config.workforcePacketInput)
       throw conflict(
         "READY_CONFIG: Actions workflow must declare an input for the typed workforce packet",
@@ -201,7 +242,21 @@ export function githubActionsService(
         .from(githubActionRuns)
         .where(eq(githubActionRuns.paperclipRunId, ctx.runId))
         .then((r) => r[0]);
-      if (prior) return prior;
+      if (prior) {
+        if (
+          prior.companyId !== ctx.agent.companyId ||
+          prior.repository !== config.repository ||
+          prior.workflow !== config.workflow ||
+          prior.ref !== config.ref ||
+          prior.issueId !==
+            (typeof ctx.context.issueId === "string"
+              ? ctx.context.issueId
+              : null) ||
+          prior.credentialSecretRef !== config.githubSecretRef
+        )
+          throw conflict("Actions run binding changed after dispatch");
+        return prior;
+      }
       return tx
         .insert(githubActionRuns)
         .values({
@@ -296,6 +351,8 @@ export function githubActionsService(
         actionsRunId: row.id,
         externalRunId: updated.externalRunId,
         pending: updated.status !== "completed",
+        completionCandidate:
+          updated.status === "completed" && updated.conclusion === "success",
         accepted: false,
         workflowSucceeded:
           updated.status === "completed" && updated.conclusion === "success",
@@ -351,6 +408,7 @@ export function githubActionsService(
           status: normalized.status,
           conclusion: normalized.conclusion,
           artifacts,
+          remoteUrl: normalized.url,
           updatedAt: new Date(),
         })
         .where(eq(githubActionRuns.id, id))
@@ -379,6 +437,8 @@ export function githubActionsService(
               externalRunId: normalized.externalRunId,
               remoteConclusion: remote.conclusion,
               pending: false,
+              completionCandidate: normalized.succeeded,
+              workflowSucceeded: normalized.succeeded,
               accepted: false,
             },
             updatedAt: new Date(),
@@ -465,6 +525,7 @@ export function startGithubActionsReconciler(db: Db) {
           inArray(githubActionRuns.status, [
             "dispatching",
             "dispatch_unknown",
+            "queued",
             "running",
           ]),
         );

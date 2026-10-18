@@ -1,3 +1,4 @@
+import { isEngineeringDependency } from "../validation/engineering-boundary.js";
 import {
   validationTaskGate,
   evidenceGate,
@@ -77,10 +78,10 @@ export function routeWorkforceNeed(
     }>,
   });
   if (
-    need.validationTask.workClass === "product_backend" ||
-    /\b(production backend|production api|production database|authentication backend|billing backend|inference infrastructure|scalable application architecture)\b/i.test(
-      need.reason,
-    )
+    isEngineeringDependency({
+      title: need.reason,
+      validationTask: need.validationTask,
+    })
   )
     return blocked(
       "FOUNDER_ENGINEERING_DEPENDENCY",
@@ -196,7 +197,7 @@ export function routeWorkforceNeed(
         (scope) =>
           scope.includes("..") ||
           scope.includes("\\") ||
-          !/^(site|website|frontend|ui|public|assets|landing|campaign|docs|experiments|prototype)(\/|$)/.test(
+          !/^(live-qualification\/fake-door|site|website|frontend|ui|public|assets|landing|campaign|docs|experiments|prototype)(\/|$)/.test(
             scope,
           ),
       )

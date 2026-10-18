@@ -123,6 +123,7 @@ export const githubActionRuns = pgTable("github_action_runs", {
   ref: text("ref").notNull(),
   credentialSecretRef: uuid("credential_secret_ref").notNull(),
   externalRunId: text("external_run_id"),
+  remoteUrl: text("remote_url"),
   status: text("status").notNull().default("prepared"),
   conclusion: text("conclusion"),
   attempts: integer("attempts").notNull().default(0),

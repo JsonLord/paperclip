@@ -1,3 +1,4 @@
+import { isEngineeringDependency } from "./engineering-boundary.js";
 import { posix } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { verifyWorkforceDispatch } from "../workforce/guards.js";
@@ -52,14 +53,7 @@ export async function inspectValidationDispatch(
   if (!parsed.success)
     return { runtime: null, blocker: "VALIDATION_TASK_INTENT_REQUIRED" };
   const task = parsed.data;
-  if (
-    /\b(production backend|database architecture|authentication backend|billing backend|inference infrastructure|production api|product.engineering refactor)\b/i.test(
-      `${issue.title}\n${issue.description ?? ""}`,
-    ) ||
-    task.writeScopes.some((s) =>
-      /^(server|backend|database|infra|packages\/db)(\/|$)/.test(s),
-    )
-  )
+  if (isEngineeringDependency(issue))
     return { runtime: null, blocker: "FOUNDER_ENGINEERING_DEPENDENCY" };
   if (task.workClass === "customer_interaction") {
     const [approval] = task.externalApprovalId
@@ -96,7 +90,7 @@ export async function inspectValidationDispatch(
         scope.includes("\\") ||
         scope.includes("..") ||
         scope.startsWith("/") ||
-        !/^(site|website|frontend|ui|public|assets|landing|campaign|docs|experiments|prototype)(\/|$)/.test(
+        !/^(live-qualification\/fake-door|site|website|frontend|ui|public|assets|landing|campaign|docs|experiments|prototype)(\/|$)/.test(
           posix.normalize(scope),
         ),
     )

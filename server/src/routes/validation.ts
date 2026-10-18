@@ -1,4 +1,5 @@
 /// <reference path="../types/express.d.ts" />
+import { runtimeQualificationPreflight } from "../services/validation/qualification-preflight.js";
 import {
   actionsConfigSchema,
   githubActionsService,
@@ -141,6 +142,11 @@ export function validationRoutes(db: Db) {
         .status(201)
         .json(await programmes.start(company(req), req.body, actor(req)));
     },
+  );
+  router.get(
+    "/companies/:companyId/validation/runtime-preflight",
+    async (req, res) =>
+      res.json(await runtimeQualificationPreflight(db)(await manager(req))),
   );
   router.get("/companies/:companyId/validation", async (req, res) => {
     res.json(await programmes.summary(await manager(req)));

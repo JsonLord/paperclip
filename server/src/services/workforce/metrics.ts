@@ -82,6 +82,23 @@ export async function workforceMetrics(db: Db, companyId: string) {
           researchGaps: snapshot.researchGaps.length,
         }
       : null,
+    canonicalMovementObservation: {
+      firstRecordedRunAt: runs.length
+        ? new Date(
+            Math.min(...runs.map((r) => r.createdAt.getTime())),
+          ).toISOString()
+        : null,
+      lastMaterialMovementAt: snapshot?.clocks.lastMaterialMovementAt ?? null,
+      signal:
+        runs.length &&
+        (!snapshot?.clocks.lastMaterialMovementAt ||
+          Date.parse(snapshot.clocks.lastMaterialMovementAt) <
+            Math.min(...runs.map((r) => r.createdAt.getTime())))
+          ? "ACTIVITY_WITHOUT_CANONICAL_PROGRESS"
+          : "NO_ABSENCE_DETECTED",
+      meaning:
+        "No canonical material movement observed since the first recorded runtime run; execution and artifacts are not validation.",
+    },
     runtimeRuns: runs.length,
     runtimeFailures: runs.filter((r) => r.status === "failed").length,
     costCents: costs.reduce((n, c) => n + c.costCents, 0),

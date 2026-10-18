@@ -1,3 +1,7 @@
+import { runtimeQualificationPreflight } from "../services/validation/qualification-preflight.js";
+import { createJulesReconciler } from "../services/jules-reconciler.js";
+import { QualificationJulesRemote } from "./fixtures/runtime-jules.js";
+import { activityLog, julesSessions } from "@paperclipai/db";
 import { nodepadCandidates } from "./fixtures/nodepad-candidates.js";
 import { workforceControlService } from "../services/workforce/control.js";
 import { workforceRoutes } from "../routes/workforce.js";
@@ -1894,5 +1898,607 @@ describe("Agency workforce native integration", () => {
     await expect(
       f.nodepad.submit(f.c.id, randomUUID(), evidence),
     ).rejects.toThrow(/company CEO/);
+  });
+});
+
+describe("runtime qualification integration", () => {
+  async function runtimeFixture() {
+    const f = await programme(),
+      { state, service: nodepad } = await bind(f);
+    state.hypotheses[0].blockedReason = null;
+    state.hypotheses[0].secondaryCount = 0;
+    state.researchGaps = ["dataset_analysis", "fake_door"];
+    await nodepad.sync(f.c.id);
+    const [source] = await db
+      .insert(companyJulesSources)
+      .values({
+        companyId: f.c.id,
+        repository: `acme/${f.c.id}`,
+        source: "sources/qualification",
+        startingBranch: "master",
+      })
+      .returning();
+    const [profile] = await db
+      .insert(julesProfiles)
+      .values({ name: f.c.id, secretRef: randomUUID(), capabilities: [] })
+      .returning();
+    await db
+      .insert(julesProfileSources)
+      .values({ profileId: profile.id, companySourceId: source.id });
+    const broker = julesCapacityBroker(db, {
+      resolveSecret: async () => "fixture",
+    });
+    async function admit(issueId?: string) {
+      const [run] = await db
+        .insert(heartbeatRuns)
+        .values({
+          companyId: f.c.id,
+          agentId: f.ceo.id,
+          invocationSource: "automation",
+          status: "running",
+        })
+        .returning();
+      const admission = await broker.admit({
+        companyId: f.c.id,
+        paperclipRunId: run.id,
+        issueId,
+        repository: source.repository,
+        requiredCapabilities: [],
+        writeScopes: ["live-qualification/fake-door/**"],
+      });
+      if (admission.kind !== "ADMITTED") throw new Error(admission.code);
+      return {
+        run,
+        admission,
+        binding: {
+          companyId: f.c.id,
+          profileId: profile.id,
+          companySourceId: source.id,
+          paperclipRunId: run.id,
+          agentId: f.ceo.id,
+          issueId,
+        },
+      };
+    }
+    return { ...f, state, nodepad, broker, source, profile, admit };
+  }
+  it.each(["COMPLETED", "FAILED", "CANCELLED"])(
+    "reconciles %s and releases only verified terminal work",
+    async (state) => {
+      const f = await runtimeFixture(),
+        { run, binding } = await f.admit(),
+        remote = new QualificationJulesRemote();
+      const session = await julesSessionService(db).createOrResumeRemoteSession(
+        binding,
+        () => remote.create(),
+      );
+      expect(
+        (
+          await julesSessionService(db).createOrResumeRemoteSession(
+            binding,
+            () => remote.create(),
+          )
+        ).id,
+      ).toBe(session.id);
+      expect(remote.creates).toBe(1);
+      remote.state = "AWAITING_PLAN_APPROVAL";
+      let current = await julesSessionService(db).reconcile(session, remote);
+      expect(current.status).toBe("AWAITING_PLAN_APPROVAL");
+      remote.state = state;
+      remote.pr =
+        state === "COMPLETED"
+          ? `https://github.com/acme/${f.c.id}/pull/1`
+          : null;
+      current = await julesSessionService(db).reconcile(current, remote);
+      expect(current.status).toBe(
+        state === "COMPLETED" ? "COMPLETED_UNVALIDATED" : "FAILED",
+      );
+      expect(current.completionCandidate).toBe(state === "COMPLETED");
+      expect(current.resultJson?.accepted).toBe(false);
+      expect(
+        (
+          await db
+            .select()
+            .from(julesRepositoryLeases)
+            .where(eq(julesRepositoryLeases.paperclipRunId, run.id))
+        )[0].releasedAt,
+      ).toBeInstanceOf(Date);
+    },
+  );
+  it("retains ambiguous creation across restart and expiry without a second POST", async () => {
+    const f = await runtimeFixture(),
+      { run, binding } = await f.admit(),
+      remote = new QualificationJulesRemote();
+    remote.error = new Error("connection lost after POST");
+    await expect(
+      julesSessionService(db).createOrResumeRemoteSession(binding, () =>
+        remote.create(),
+      ),
+    ).rejects.toThrow(/connection lost/);
+    await f.broker.releaseAdmission(run.id);
+    await f.broker.recoverStaleLeases(new Date(Date.now() + 7 * 86400_000));
+    remote.error = null;
+    await expect(
+      julesSessionService(db).createOrResumeRemoteSession(binding, () =>
+        remote.create(),
+      ),
+    ).rejects.toThrow(/JULES_DISPATCH_UNKNOWN/);
+    expect(remote.creates).toBe(1);
+    const [lease] = await db
+      .select()
+      .from(julesRepositoryLeases)
+      .where(eq(julesRepositoryLeases.paperclipRunId, run.id));
+    expect(lease.releasedAt).toBeNull();
+    expect(lease.dispatchStartedAt).toBeInstanceOf(Date);
+    // Simulate external manual reconciliation of the ambiguous response, not another create.
+    await julesSessionService(db).attachDispatchedSession({
+      ...binding,
+      julesSessionId: remote.id,
+    });
+    const s = await julesSessionService(db).getByRunId(run.id);
+    remote.state = "FAILED";
+    await julesSessionService(db).reconcile(s!, remote);
+  });
+  it("keeps transient and unknown remote state leased, then rejects completion without an artifact", async () => {
+    const f = await runtimeFixture(),
+      { binding, run } = await f.admit(),
+      remote = new QualificationJulesRemote(),
+      service = julesSessionService(db);
+    let current = await service.createOrResumeRemoteSession(binding, () =>
+      remote.create(),
+    );
+    remote.error = new Error("503 transient");
+    await expect(service.reconcile(current, remote)).rejects.toThrow(/503/);
+    remote.error = null;
+    remote.state = "UNRECOGNIZED_FUTURE_STATE";
+    current = await julesSessionService(db).reconcile(current, remote);
+    expect(current.status).toBe("QUEUED");
+    expect(
+      (
+        await db
+          .select()
+          .from(julesRepositoryLeases)
+          .where(eq(julesRepositoryLeases.paperclipRunId, run.id))
+      )[0].releasedAt,
+    ).toBeNull();
+    remote.state = "COMPLETED";
+    current = await service.reconcile(current, remote);
+    expect(current).toMatchObject({
+      status: "FAILED",
+      completionCandidate: false,
+    });
+    expect(current.resultJson?.missingExpectedArtifact).toBe(true);
+  });
+  it("dispatches Actions once across failure, restarts and read-only reconciliation, with scoped secrets", async () => {
+    const f = await programme(),
+      a = await actionFixture(f),
+      resolve = vi.fn(async (companyId: string, ref: string) => {
+        expect(companyId).toBe(f.c.id);
+        expect(ref).toBe(a.ctx.config.githubSecretRef);
+        return "fixture-only-token";
+      });
+    let state: ActionRemoteRun | null = null;
+    a.provider.dispatch = vi.fn(async () => {
+      state = {
+        id: 400,
+        display_title: `paperclip:${a.ctx.runId}`,
+        status: "queued",
+        conclusion: null,
+        html_url: "https://github.com/acme/validation/actions/runs/400",
+      };
+      throw new Error("response lost");
+    });
+    a.provider.find = async () => state;
+    a.provider.get = async () => state!;
+    let svc = githubActionsService(db, a.provider, resolve);
+    expect((await svc.execute(a.ctx)).errorCode).toBe(
+      "actions_dispatch_unknown",
+    );
+    svc = githubActionsService(db, a.provider, resolve);
+    expect((await svc.execute(a.ctx)).resultJson?.pending).toBe(true);
+    expect(a.provider.dispatch).toHaveBeenCalledTimes(1);
+    const [row] = await db
+      .select()
+      .from(githubActionRuns)
+      .where(eq(githubActionRuns.paperclipRunId, a.ctx.runId));
+    expect(row.status).toBe("queued");
+    state = { ...state!, status: "in_progress" };
+    expect((await svc.reconcile(row.id))?.status).toBe("running");
+    state = { ...state!, status: "completed", conclusion: "failure" };
+    await svc.reconcile(row.id);
+    const result = await svc.execute(a.ctx);
+    expect(result.exitCode).toBe(1);
+    expect(result.resultJson).toMatchObject({
+      accepted: false,
+      workflowSucceeded: false,
+      completionCandidate: false,
+    });
+    expect(
+      (
+        await db
+          .select()
+          .from(githubActionRuns)
+          .where(eq(githubActionRuns.id, row.id))
+      )[0].remoteUrl,
+    ).toContain("/400");
+    await expect(
+      svc.execute({ ...a.ctx, config: { ...a.ctx.config, ref: "different" } }),
+    ).rejects.toThrow(/binding changed/);
+    expect(
+      JSON.stringify(
+        await db
+          .select()
+          .from(activityLog)
+          .where(eq(activityLog.companyId, f.c.id)),
+      ),
+    ).not.toContain("fixture-only-token");
+  });
+  it.each([
+    "Build a production backend, database, authentication service and API",
+    "Implement a database schema",
+    "Create an authentication service",
+    "Build an API",
+    "Refactor product-engineering",
+    "Structured backend work",
+  ])("rejects before allocation: %s", async (title) => {
+    const f = await runtimeFixture(),
+      a = await actionFixture(f),
+      [issue] = await db
+        .insert(issues)
+        .values({
+          companyId: f.c.id,
+          title,
+          validationTask: validationTaskSchema.parse({
+            workClass:
+              title === "Structured backend work"
+                ? "product_backend"
+                : "analysis",
+            hypothesisIds: ["H-021"],
+          }),
+        })
+        .returning();
+    const before = {
+      leases: (await db.select().from(julesRepositoryLeases)).length,
+      events: (await db.select().from(julesCapacityEvents)).length,
+      sessions: (await db.select().from(julesSessions)).length,
+      actions: (await db.select().from(githubActionRuns)).length,
+    };
+    await expect(
+      a.service.execute({ ...a.ctx, context: { issueId: issue.id } }),
+    ).rejects.toThrow(/FOUNDER_ENGINEERING_DEPENDENCY/);
+    await expect(
+      f.broker.admit({
+        companyId: f.c.id,
+        paperclipRunId: a.ctx.runId,
+        issueId: issue.id,
+        repository: f.source.repository,
+        requiredCapabilities: [],
+        writeScopes: ["site/**"],
+      }),
+    ).rejects.toThrow(/FOUNDER_ENGINEERING_DEPENDENCY/);
+    expect(a.dispatch).not.toHaveBeenCalled();
+    expect({
+      leases: (await db.select().from(julesRepositoryLeases)).length,
+      events: (await db.select().from(julesCapacityEvents)).length,
+      sessions: (await db.select().from(julesSessions)).length,
+      actions: (await db.select().from(githubActionRuns)).length,
+    }).toEqual(before);
+  });
+  it("golden runtime slice: Agency → Actions → blocked typed evidence → independent canonical fixture → Jules PR → CEO", async () => {
+    const f = await runtimeFixture(),
+      wf = workforceService(db, {
+        runtimes: { "github-actions": true, hermes_local: true, jules: true },
+        wake: async () => ({ id: "fixture-wake" }),
+      });
+    const need = (gap: string, stage: string, workClass: string) => ({
+      eventKey: `golden:${gap}`,
+      eventType: "research_gap",
+      gap,
+      stage,
+      hypothesisId: "H-021",
+      sourceGapRef: gap,
+      datasetRefs: ["fixture:human-interviews"],
+      reason: "Resolve the named validation uncertainty with a bounded test",
+      validationTask: validationTaskSchema.parse({
+        workClass,
+        hypothesisIds: ["H-021"],
+        writeScopes:
+          stage === "frontend" ? ["live-qualification/fake-door/**"] : [],
+        experimentQuestion: "Will visitors request a conversation?",
+        behavioralMetric: "Qualified requests / visitors",
+      }),
+      economics: {
+        informationGain: 0.8,
+        timeToSignalHours: 1,
+        cashCostCents: 0,
+        founderMinutes: 5,
+        julesStarts: stage === "frontend" ? 1 : 0,
+        externalInteractionBurden: "No real customer contact",
+      },
+    });
+    const analysis = await wf.activate(
+      f.c.id,
+      need("dataset_analysis", "analysis", "analysis"),
+      f.ceo.id,
+    );
+    if (!("activation" in analysis))
+      throw new Error("Analysis activation missing");
+    const [analyst] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, analysis.activation.memberId));
+    expect(analyst.agencyId).toBe("customer-investigator");
+    const a = await actionFixture(f),
+      [native] = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, analyst.agentId));
+    await db
+      .update(heartbeatRuns)
+      .set({ agentId: analyst.agentId })
+      .where(eq(heartbeatRuns.id, a.ctx.runId));
+    const ctx = {
+      ...a.ctx,
+      agent: native,
+      context: { issueId: analysis.activation.issueId! },
+    };
+    await a.service.execute(ctx);
+    a.complete();
+    const [action] = await db
+      .select()
+      .from(githubActionRuns)
+      .where(eq(githubActionRuns.paperclipRunId, ctx.runId));
+    await githubActionsService(db, a.provider, async () => "fixture").reconcile(
+      action.id,
+    );
+    const products = await db
+      .select()
+      .from(issueWorkProducts)
+      .where(eq(issueWorkProducts.issueId, analysis.activation.issueId!));
+    expect(products).toHaveLength(1);
+    const proposal = vi.fn(),
+      blocked = {
+        ...fixtureProvider(f.state),
+        mode: "live" as const,
+        submitEvidence: vi.fn(async () => {
+          throw new Error("BLOCKED_EXTERNAL_NODEPAD_EVIDENCE_WRITE");
+        }),
+        proposeHypothesis: proposal,
+      };
+    const before = structuredClone(f.state);
+    await expect(
+      nodepadService(db, blocked, async () => "fixture").submit(
+        f.c.id,
+        analyst.agentId,
+        {
+          type: "evidence_submission",
+          idempotencyKey: "golden-evidence",
+          hypothesisId: "H-021",
+          summary: "Synthetic analysis artifact, not canonical validation",
+          sourceRef: `artifact:${products[0].id}`,
+          contentHash: "a".repeat(64),
+          pipelineRunRef: `actions:${ctx.runId}`,
+        },
+      ),
+    ).rejects.toThrow(/BLOCKED_EXTERNAL_NODEPAD_EVIDENCE_WRITE/);
+    expect(proposal).not.toHaveBeenCalled();
+    expect(f.state.evidence).toEqual(before.evidence);
+    expect(f.state.hypotheses[0].qualification).toBe(
+      before.hypotheses[0].qualification,
+    );
+    expect(f.state.materialChanges).toEqual(before.materialChanges);
+    await wf.complete(
+      f.c.id,
+      analysis.activation.id,
+      {
+        report: "ACTIVITY_WITHOUT_CANONICAL_PROGRESS: evidence write blocked",
+        artifactIds: [products[0].id],
+        nodepadRefs: [],
+        outcome: "blocked",
+      },
+      analyst.agentId,
+    );
+    expect(JSON.stringify(await assembleCeoContext(db, f.c.id))).toContain(
+      "ACTIVITY_WITHOUT_CANONICAL_PROGRESS",
+    );
+    expect(
+      (await workforceMetrics(db, f.c.id)).canonicalMovementObservation.signal,
+    ).toBe("ACTIVITY_WITHOUT_CANONICAL_PROGRESS");
+    // TEST FIXTURE: external canonical state advanced independently. This is not acceptance of the blocked write.
+    await issueService(db).addComment(
+      f.p.directionIssueId,
+      "TEST FIXTURE: external canonical state advanced independently",
+      { agentId: f.ceo.id },
+    );
+    f.state.revision = "runtime-fixture-r2";
+    f.state.interviews = [interview(1), interview(2), interview(3)];
+    f.state.evidence = [
+      "target_customer:fixture",
+      "problem:fixture",
+      "customer_language:fixture",
+      "proposition:fixture",
+      "counter_hypothesis:fixture",
+    ];
+    f.state.materialChanges = ["external-canonical-fixture-update"];
+    await f.nodepad.sync(f.c.id);
+    await db
+      .update(validationProgrammes)
+      .set({ phase: "CONCENTRATE" })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    const fakeDoor = await wf.activate(
+      f.c.id,
+      need("fake_door", "frontend", "fake_door"),
+      f.ceo.id,
+    );
+    expect(fakeDoor.status).toBe("ACTIVATED");
+    if (!("activation" in fakeDoor)) throw new Error("Fake door missing");
+    const [designer] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, fakeDoor.activation.memberId));
+    expect(designer.agencyId).toBe("fake-door-designer");
+    expect(fakeDoor.activation.runtime).toBe("jules");
+    const { run, binding } = await f.admit(fakeDoor.activation.issueId!);
+    await db
+      .update(heartbeatRuns)
+      .set({ agentId: designer.agentId })
+      .where(eq(heartbeatRuns.id, run.id));
+    binding.agentId = designer.agentId;
+    const remote = new QualificationJulesRemote("golden-remote-session"),
+      lifecycle = julesSessionService(db);
+    let session = await lifecycle.createOrResumeRemoteSession(binding, () =>
+      remote.create(),
+    );
+    remote.state = "COMPLETED";
+    remote.pr = `https://github.com/${f.source.repository}/pull/1`;
+    session = await julesSessionService(db).reconcile(session, remote);
+    expect(session).toMatchObject({
+      status: "COMPLETED_UNVALIDATED",
+      completionCandidate: true,
+      pullRequestUrl: remote.pr,
+    });
+    expect(session.resultJson?.accepted).toBe(false);
+    await createJulesReconciler(db, {
+      remoteForSession: async () => remote,
+    }).reconcileNow();
+    // The production lifecycle projects a verified PR candidate atomically; acceptance stays false.
+    expect(
+      (
+        await db
+          .select()
+          .from(julesRepositoryLeases)
+          .where(eq(julesRepositoryLeases.paperclipRunId, run.id))
+      )[0].releasedAt,
+    ).toBeInstanceOf(Date);
+    const prs = await db
+      .select()
+      .from(issueWorkProducts)
+      .where(
+        and(
+          eq(issueWorkProducts.companyId, f.c.id),
+          eq(issueWorkProducts.issueId, fakeDoor.activation.issueId!),
+        ),
+      );
+    expect(prs).toHaveLength(1);
+    const pr = prs[0];
+    expect(pr.url).toBe(remote.pr);
+    expect(pr.metadata?.accepted).toBe(false);
+    await wf.complete(
+      f.c.id,
+      fakeDoor.activation.id,
+      {
+        report: "Synthetic frontend PR; experiment remains unvalidated",
+        artifactIds: [pr.id],
+        nodepadRefs: ["fake_door"],
+        outcome: "reusable_artifact",
+      },
+      designer.agentId,
+    );
+    await validationProgrammeService(db).cycle(
+      f.c.id,
+      {
+        expectedProgress: "Transport and bounded frontend output",
+        actualProgress: "PR candidate; evidence submission blocked",
+        materialChanges: ["external-canonical-fixture-update"],
+        previousDecisionReview: "No blocked write became a hypothesis",
+        highestImpactUncertainty: "Real customer response remains unknown",
+        blockers: ["BLOCKED_EXTERNAL_NODEPAD_EVIDENCE_WRITE"],
+        agentResolvable: [],
+        founderActions: ["Run the two external runtime gates"],
+        stopWork: ["No further synthetic analysis"],
+        mustWinOutcomes: ["Verify the two real provider IDs"],
+        founderQuestions: [],
+        reporterAssessment: "ACTIVITY_WITHOUT_CANONICAL_PROGRESS",
+      },
+      "runtime-golden-reflection",
+      f.ceo.id,
+    );
+    const packet = await assembleCeoContext(db, f.c.id);
+    expect(JSON.stringify(packet)).toContain(
+      "ACTIVITY_WITHOUT_CANONICAL_PROGRESS",
+    );
+    expect(f.state.hypotheses[0].qualification).toBe("unqualified");
+    expect(f.state.experiments).toHaveLength(0);
+    expect(a.dispatch).toHaveBeenCalledTimes(1);
+    expect(remote.creates).toBe(1);
+  });
+
+  it("performs company-scoped preflight without allocating provider work or exposing credential values", async () => {
+    const f = await runtimeFixture(),
+      a = await actionFixture(f);
+    await db
+      .update(validationProgrammes)
+      .set({ runtimeBindings: { "github-actions": a.ctx.config } })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    const resolve = vi.fn(async (companyId: string) => {
+      expect(companyId).toBe(f.c.id);
+      return "not-for-reporting";
+    });
+    const result = await runtimeQualificationPreflight(db, resolve)(f.c.id);
+    expect(result.actions).toMatchObject({
+      repositoryBound: true,
+      workflowConfigured: true,
+      credentialConfigured: true,
+      defaultBranchDiscovery: "NEEDS_EXTERNAL_CHECK",
+    });
+    expect(JSON.stringify(result)).not.toContain("not-for-reporting");
+    expect(a.dispatch).not.toHaveBeenCalled();
+    expect(result.launchesRemoteWork).toBe(false);
+    const denied = await runtimeQualificationPreflight(db, async () => {
+      throw new Error("another company secret");
+    })(f.c.id);
+    expect(denied.actions.credentialConfigured).toBe(false);
+    expect(denied.jules.credentialConfigured).toBe(false);
+  });
+  it("serializes simultaneous session creation and reuses the durable binding", async () => {
+    const f = await runtimeFixture(),
+      { binding } = await f.admit(),
+      remote = new QualificationJulesRemote("parallel-remote");
+    const requests = await Promise.allSettled([
+      julesSessionService(db).createOrResumeRemoteSession(binding, () =>
+        remote.create(),
+      ),
+      julesSessionService(db).createOrResumeRemoteSession(binding, () =>
+        remote.create(),
+      ),
+    ]);
+    expect(requests.some((r) => r.status === "fulfilled")).toBe(true);
+    expect(remote.creates).toBe(1);
+    const session = await julesSessionService(db).getByRunId(
+      binding.paperclipRunId,
+    );
+    remote.state = "FAILED";
+    await julesSessionService(db).reconcile(session!, remote);
+  });
+
+  it("serializes concurrent physical reservations without creating per-company concurrency", async () => {
+    const f = await runtimeFixture();
+    const runs = await db
+      .insert(heartbeatRuns)
+      .values(
+        Array.from({ length: 4 }, () => ({
+          companyId: f.c.id,
+          agentId: f.ceo.id,
+          invocationSource: "automation",
+          status: "running",
+        })),
+      )
+      .returning();
+    const results = await Promise.all(
+      runs.map((run, index) =>
+        f.broker.admit({
+          companyId: f.c.id,
+          paperclipRunId: run.id,
+          repository: f.source.repository,
+          requiredCapabilities: [],
+          writeScopes: [`site/qualification-${index}/**`],
+        }),
+      ),
+    );
+    expect(results.filter((r) => r.kind === "ADMITTED")).toHaveLength(3);
+    expect(results.filter((r) => r.kind === "DENIED")).toMatchObject([
+      { kind: "DENIED", code: "CONCURRENCY_EXHAUSTED" },
+    ]);
+    for (const run of runs) await f.broker.releaseAdmission(run.id);
   });
 });

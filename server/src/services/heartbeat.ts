@@ -1,3 +1,4 @@
+import { claimJulesCreation } from "./jules-sessions.js";
 import { workforceControlService } from "./workforce/control.js";
 import { workforceMetrics } from "./workforce/metrics.js";
 import { tickWorkforceReporters } from "./workforce/scheduler.js";
@@ -2209,6 +2210,9 @@ export function heartbeatService(db: Db) {
         }
       }
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
+        if (meta.adapterType === "jules" && parseObject(parseObject(meta.context).julesDispatch).phase === "create_requested") {
+          await claimJulesCreation(db, run.id);
+        }
         if (meta.env && secretKeys.size > 0) {
           for (const key of secretKeys) {
             if (key in meta.env) meta.env[key] = "***REDACTED***";
