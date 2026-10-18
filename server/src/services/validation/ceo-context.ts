@@ -1,3 +1,4 @@
+import { workforceService } from "../workforce/service.js";
 import { and, desc, eq } from "drizzle-orm";
 import {
   agents,
@@ -107,6 +108,7 @@ export async function assembleCeoContext(
       .limit(20),
   ]);
   const summary = await svc.summary(companyId, now);
+  const workforce = await workforceService(db).inspect(companyId);
   const packet = {
     version: "validation-ceo-context/v1",
     companyId,
@@ -164,6 +166,37 @@ export async function assembleCeoContext(
     decisions: records
       .filter((r) => ["decision", "decision_request"].includes(r.kind))
       .slice(0, 8),
+    workforce: {
+      counts: Object.fromEntries(
+        [
+          "DORMANT",
+          "AVAILABLE",
+          "ACTIVE",
+          "WAITING",
+          "BLOCKED",
+          "PAUSED",
+          "DISABLED",
+        ].map((state) => [
+          state,
+          workforce.members.filter((m) => m.state === state).length,
+        ]),
+      ),
+      api: `/api/companies/${companyId}/workforce`,
+      recent: workforce.activations
+        .slice(0, 8)
+        .map((a) => ({
+          id: a.id,
+          memberId: a.memberId,
+          issueId: a.issueId,
+          runtime: a.runtime,
+          status: a.status,
+          gap: a.need.gap,
+          hypothesisId: a.need.hypothesisId,
+          reason: a.need.reason,
+          result: a.result,
+        })),
+    },
+    agencyCandidates: summary.agencyCandidates,
     reporter: summary.latestReporter,
     latestCycle: summary.latestCycle,
     nextActions: summary.nextActions.slice(0, 3),

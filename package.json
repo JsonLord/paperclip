@@ -32,9 +32,10 @@
     "test:e2e:headed": "npx playwright test --config tests/e2e/playwright.config.ts --headed"
   },
   "devDependencies": {
-    "cross-env": "^10.1.0",
     "@playwright/test": "^1.58.2",
+    "cross-env": "^10.1.0",
     "esbuild": "^0.27.3",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },

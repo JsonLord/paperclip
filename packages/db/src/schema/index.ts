@@ -73,3 +73,5 @@ export { publishingAccounts, contentCandidates, socialPublications, contentStrat
 export { crowdfundingCampaigns, crowdfundingEvents } from "./crowdfunding.js";
 
 export { validationProgrammes, validationRecords, nodepadBindings, githubActionRuns, julesPools } from "./validation.js";
+
+export { workforceImports, workforceMembers, workforceActivations } from "./workforce.js";

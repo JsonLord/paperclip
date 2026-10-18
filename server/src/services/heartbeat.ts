@@ -1,6 +1,10 @@
+import { workforceControlService } from "./workforce/control.js";
+import { workforceMetrics } from "./workforce/metrics.js";
+import { tickWorkforceReporters } from "./workforce/scheduler.js";
+import { verifyWorkforceDispatch, workforcePacket } from "./workforce/guards.js";
 import { inspectValidationDispatch } from "./validation/task-policy.js";
 import { assembleCeoContext } from "./validation/ceo-context.js";
-import { validationProgrammes } from "@paperclipai/db";
+import { validationProgrammes, workforceImports } from "@paperclipai/db";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
@@ -1715,8 +1719,16 @@ export function heartbeatService(db: Db) {
         if (dispatch?.runtime) agent = { ...agent, adapterType: dispatch.runtime };
       }
     }
+    const workforceDispatch = await verifyWorkforceDispatch(db, agent.companyId, agent.id, assignedId);
+    if (workforceDispatch && workforceDispatch.activation.runtime !== agent.adapterType) {
+      throw new Error("Workforce runtime differs from authorized activation");
+    }
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+    if (workforceDispatch) {
+      const [imported] = await db.select().from(workforceImports).where(eq(workforceImports.companyId, agent.companyId));
+      context.workforcePacket = workforcePacket(workforceDispatch.member, workforceDispatch.activation, imported?.definition);
+    }
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
@@ -2234,6 +2246,13 @@ export function heartbeatService(db: Db) {
         if (!binding) throw new Error("READY_CONFIG: founder must configure the company GitHub Actions runtime");
         resolvedConfig = { ...binding };
       }
+      if (workforceDispatch && agent.adapterType !== "github-actions") {
+        const binding = programmeForRun?.runtimeBindings[agent.adapterType];
+        if (binding) resolvedConfig = { ...resolvedConfig, ...binding };
+      }
+      if (workforceDispatch?.member.agencyId === "founder-intelligence-reporter") {
+        context.workforceMetrics = await workforceMetrics(db, agent.companyId);
+      }
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
@@ -2278,6 +2297,18 @@ export function heartbeatService(db: Db) {
         const packet = await assembleCeoContext(db, agent.companyId);
         context.ceoContextPacket = packet;
         resolvedConfig = { ...resolvedConfig, promptTemplate: `${String(resolvedConfig.promptTemplate ?? "")}\n\nCurrent deterministic CEO context packet:\n${JSON.stringify(packet)}` };
+      }
+      if (context.workforcePacket && context.workforceMetrics) {
+        context.workforcePacket = { ...parseObject(context.workforcePacket), hostMetrics: context.workforceMetrics };
+      }
+      if (context.workforcePacket) {
+        const instructions = `Typed Agency activation context:\n${JSON.stringify(context.workforcePacket)}`;
+        if (instructions.length > 48_000) throw new Error("Workforce context exceeds task packet bound");
+        resolvedConfig = {
+          ...resolvedConfig,
+          promptTemplate: `${String(resolvedConfig.promptTemplate ?? "")}\n${instructions}`,
+          managerNotes: `${String(resolvedConfig.managerNotes ?? "")}\n${instructions}`,
+        };
       }
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
@@ -3658,12 +3689,20 @@ export function heartbeatService(db: Db) {
     resumeQueuedRuns,
 
     tickTimers: async (now = new Date()) => {
+      await workforceControlService(db, cancelActiveForAgentInternal).stopInvalid();
       const allAgents = await db.select().from(agents);
+      const reports = await tickWorkforceReporters(db, now, async (agentId, issueId, eventKey) =>
+        enqueueWakeup(agentId, {
+          source: "timer", triggerDetail: "system", reason: "workforce_report",
+          idempotencyKey: `workforce:${eventKey}`, contextSnapshot: { issueId, eventKey },
+        }),
+      );
       let checked = 0;
-      let enqueued = 0;
+      let enqueued = reports;
       let skipped = 0;
 
       for (const agent of allAgents) {
+        if (agent.metadata?.agencyId) continue;
         if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
         const policy = parseHeartbeatPolicy(agent);
         if (!policy.enabled || policy.intervalSec <= 0) continue;

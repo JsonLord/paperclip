@@ -1,0 +1,59 @@
+name: Validation analysis
+
+run-name: "paperclip:${{ inputs.paperclip_run_id }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      paperclip_run_id:
+        description: "Paperclip heartbeat/run correlation ID"
+        required: true
+        type: string
+
+      force_failure:
+        description: "Force controlled failure for qualification"
+        required: false
+        default: "false"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run safe validation qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p output
+
+          cat > output/result.json <<INNEREOF
+          {
+            "paperclip_run_id": "${{ inputs.paperclip_run_id }}",
+            "runtime": "github-actions",
+            "qualification": "synthetic",
+            "accepted": false,
+            "finding": "Remote GitHub Actions execution completed"
+          }
+INNEREOF
+
+          if [ "${{ inputs.force_failure }}" = "true" ]; then
+            echo "Controlled qualification failure requested."
+            # Simulating failure behavior using standard exit mechanism in Actions
+            exit 1
+          fi
+
+      - name: Upload qualification artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-result-${{ inputs.paperclip_run_id }}
+          path: output/result.json
+          if-no-files-found: error
