@@ -327,16 +327,89 @@ export const nodepadBindingSchema = z
     apiKeySecretRef: z.string().uuid(),
   })
   .strict();
-export const nodepadCandidateSchema = z
+const nodepadCandidateBase = {
+  idempotencyKey: z.string().min(1).max(200),
+  hypothesisId: text,
+  summary: text,
+};
+export const nodepadEvidenceSubmissionSchema = z
   .object({
-    idempotencyKey: z.string().min(1).max(200),
-    hypothesisId: text,
+    ...nodepadCandidateBase,
+    type: z.literal("evidence_submission"),
     sourceRef: text,
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
     pipelineRunRef: text,
-    summary: text,
   })
   .strict();
+export const nodepadResearchGapSchema = z
+  .object({
+    ...nodepadCandidateBase,
+    type: z.literal("research_gap"),
+    sourceRefs: z.array(z.string().min(1).max(500)).min(1).max(100),
+    question: text,
+  })
+  .strict();
+export const nodepadHypothesisProposalSchema = z
+  .object({
+    ...nodepadCandidateBase,
+    type: z.literal("hypothesis_proposal"),
+    sourceRefs: z.array(z.string().min(1).max(500)).min(1).max(100),
+    statement: text,
+  })
+  .strict();
+export const nodepadCounterHypothesisSchema = z
+  .object({
+    ...nodepadCandidateBase,
+    type: z.literal("counter_hypothesis"),
+    sourceRefs: z.array(z.string().min(1).max(500)).min(1).max(100),
+    statement: text,
+  })
+  .strict();
+export const nodepadExperimentSpecSchema = z
+  .object({
+    ...nodepadCandidateBase,
+    type: z.literal("experiment_spec"),
+    sourceRefs: z.array(z.string().min(1).max(500)).min(1).max(100),
+    question: text,
+    behavioralMetric: text,
+    stopCondition: text,
+  })
+  .strict();
+export const nodepadExperimentResultSchema = z
+  .object({
+    ...nodepadCandidateBase,
+    type: z.literal("experiment_result"),
+    experimentId: text,
+    sourceRef: text,
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    pipelineRunRef: text,
+  })
+  .strict();
+/** No untagged compatibility fallback: evidence must never be interpreted as a hypothesis. */
+export const nodepadCandidateSchema = z.discriminatedUnion("type", [
+  nodepadEvidenceSubmissionSchema,
+  nodepadResearchGapSchema,
+  nodepadHypothesisProposalSchema,
+  nodepadCounterHypothesisSchema,
+  nodepadExperimentSpecSchema,
+  nodepadExperimentResultSchema,
+]);
+export type NodepadCandidate = z.infer<typeof nodepadCandidateSchema>;
+export type NodepadCandidateType = NodepadCandidate["type"];
+export type NodepadCandidateOf<T extends NodepadCandidateType> = Extract<
+  NodepadCandidate,
+  { type: T }
+>;
+export const nodepadCandidateReceiptSchema = z
+  .object({
+    candidateId: text,
+    companyId: z.string().uuid(),
+    workspaceId: text,
+  })
+  .strict();
+export type NodepadCandidateReceipt = z.infer<
+  typeof nodepadCandidateReceiptSchema
+>;
 export const ventureHandoffSchema = z
   .object({
     kind: z.literal("PROJECT_CONTINUATION_RECOMMENDATION"),

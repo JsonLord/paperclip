@@ -288,8 +288,13 @@ describe("provider boundaries", () => {
     const provider = nodepadHttpProvider();
     expect(Object.keys(provider).sort()).toEqual([
       "mode",
+      "proposeCounterHypothesis",
+      "proposeExperiment",
+      "proposeHypothesis",
+      "proposeResearchGap",
       "read",
-      "submitCandidate",
+      "submitEvidence",
+      "submitExperimentResult",
     ]);
   });
   it.each([

@@ -1,3 +1,4 @@
+import { nodepadCandidates } from "./fixtures/nodepad-candidates.js";
 import { workforceControlService } from "../services/workforce/control.js";
 import { workforceRoutes } from "../routes/workforce.js";
 import { tickWorkforceReporters } from "../services/workforce/scheduler.js";
@@ -49,7 +50,10 @@ import {
 import { validationProgrammeService } from "../services/validation/programmes.js";
 import {
   nodepadService,
+  nodepadHttpProvider,
   type NodepadProvider,
+  type NodepadCandidateInput,
+  type NodepadBinding,
 } from "../services/validation/nodepad.js";
 import {
   githubActionsService,
@@ -140,16 +144,26 @@ function appFor(companyId: string, agentId?: string) {
   app.use(errorHandler);
   return app;
 }
+const fixtureCandidate = async (
+  binding: NodepadBinding,
+  _key: string,
+  input: NodepadCandidateInput,
+) => ({
+  candidateId: `candidate:${input.candidate.idempotencyKey}`,
+  companyId: binding.companyId,
+  workspaceId: binding.workspaceId,
+});
 const fixtureProvider = (
   state: ReturnType<typeof snapshot>,
 ): NodepadProvider => ({
   mode: "fixture",
   read: async () => state,
-  submitCandidate: async (binding, _key, input) => ({
-    candidateId: `candidate:${input.candidate.idempotencyKey}`,
-    companyId: binding.companyId,
-    workspaceId: binding.workspaceId,
-  }),
+  submitEvidence: fixtureCandidate,
+  proposeResearchGap: fixtureCandidate,
+  proposeHypothesis: fixtureCandidate,
+  proposeCounterHypothesis: fixtureCandidate,
+  proposeExperiment: fixtureCandidate,
+  submitExperimentResult: fixtureCandidate,
 });
 async function bind(
   f: Awaited<ReturnType<typeof programme>>,
@@ -581,6 +595,7 @@ describe("Nodepad isolation and candidate submission", () => {
     const f = await programme();
     const { service, state } = await bind(f);
     const candidatePayload = {
+      type: "evidence_submission" as const,
       idempotencyKey: "test-idemp-123",
       hypothesisId: state.hypotheses[0].id,
       sourceRef: "test-ref",
@@ -615,6 +630,7 @@ describe("Nodepad isolation and candidate submission", () => {
     const f = await programme(),
       { service, state } = await bind(f);
     const candidate = {
+      type: "evidence_submission" as const,
       idempotencyKey: "evidence-1",
       hypothesisId: "H-021",
       sourceRef: "github:acme/repo/interview.md",
@@ -914,6 +930,7 @@ describe("fixture vertical validation slice", () => {
       .where(eq(githubActionRuns.paperclipRunId, actions.ctx.runId));
     await actions.service.reconcile(actionRow.id);
     await service.submit(f.c.id, f.ceo.id, {
+      type: "evidence_submission" as const,
       idempotencyKey: "collection",
       hypothesisId: "H-021",
       sourceRef: "github:acme/validation/collection.md",
@@ -1305,6 +1322,7 @@ describe("Agency workforce native integration", () => {
     ).rejects.toThrow(/active work/);
     await expect(
       f.nodepad.submit(f.c.id, scout.agentId, {
+        type: "evidence_submission",
         hypothesisId: "H-021",
         summary: "Raw collection is not accepted analysis",
         sourceRefs: ["public:thread"],
@@ -1354,6 +1372,7 @@ describe("Agency workforce native integration", () => {
       };
       if (expected === "customer-investigator") {
         const candidate = {
+          type: "evidence_submission" as const,
           hypothesisId: "H-021",
           summary: "Analyzed interview findings with provenance",
           sourceRef: `artifact:${artifact.id}`,
@@ -1732,7 +1751,7 @@ describe("Agency workforce native integration", () => {
       ).status,
     ).toBe("CANCELLED");
   });
-  it("refuses the inherited live hypothesis-only adapter for Agency evidence submission", async () => {
+  it("rejects a missing typed evidence operation without a hypothesis fallback", async () => {
     const f = await workforceFixture(),
       n = requestNeed("dataset_analysis", "analysis", "analysis");
     n.datasetRefs = ["fixture:dataset"];
@@ -1746,7 +1765,8 @@ describe("Agency workforce native integration", () => {
       provider = {
         ...fixtureProvider(f.state),
         mode: "live" as const,
-        submitCandidate: submit,
+        submitEvidence:
+          undefined as unknown as NodepadProvider["submitEvidence"],
       };
     await expect(
       nodepadService(db, provider, async () => "fixture").submit(
@@ -1758,10 +1778,121 @@ describe("Agency workforce native integration", () => {
           sourceRef: "fixture:dataset",
           contentHash: "a".repeat(64),
           pipelineRunRef: "fixture:analysis",
+          type: "evidence_submission",
           idempotencyKey: "unsafe-live",
         },
       ),
-    ).rejects.toThrow(/evidence\/provenance/);
+    ).rejects.toThrow(/submitEvidence/);
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("authorizes every discriminated candidate against its own exact grant", async () => {
+    const f = await workforceFixture(),
+      need = requestNeed("dataset_analysis", "analysis", "analysis");
+    need.datasetRefs = ["fixture:dataset"];
+    const activation = await f.workforce.activate(f.c.id, need, f.ceo.id);
+    if (!("activation" in activation)) throw new Error("Missing activation");
+    const [member] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, activation.activation.memberId));
+    for (const granted of nodepadCandidates) {
+      await db
+        .update(workforceMembers)
+        .set({
+          definition: {
+            ...member.definition,
+            nodepad: { ...member.definition.nodepad, writes: [granted.type] },
+          },
+        })
+        .where(eq(workforceMembers.id, member.id));
+      for (const candidate of nodepadCandidates) {
+        const request = {
+          ...candidate,
+          idempotencyKey: `${granted.type}:${candidate.type}`,
+        };
+        if (candidate.type === granted.type)
+          expect(
+            (await f.nodepad.submit(f.c.id, member.agentId, request)).status,
+          ).toBe("submitted");
+        else
+          await expect(
+            f.nodepad.submit(f.c.id, member.agentId, request),
+          ).rejects.toThrow(/operation is forbidden/);
+      }
+    }
+  });
+
+  it("sends an authorized evidence submission through the HTTP evidence operation only", async () => {
+    const f = await workforceFixture(),
+      need = requestNeed("dataset_analysis", "analysis", "analysis");
+    need.datasetRefs = ["fixture:dataset"];
+    const activated = await f.workforce.activate(f.c.id, need, f.ceo.id);
+    if (!("activation" in activated)) throw new Error("Missing activation");
+    const [member] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, activated.activation.memberId));
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            candidateId: "evidence:receipt",
+            companyId: f.c.id,
+            workspaceId: f.state.workspaceId,
+          }),
+          { status: 201 },
+        ),
+    );
+    const candidate = nodepadCandidates[0];
+    expect(
+      (
+        await nodepadService(
+          db,
+          nodepadHttpProvider(fetcher as typeof fetch),
+          async () => "fixture-key",
+        ).submit(f.c.id, member.agentId, candidate)
+      ).status,
+    ).toBe("submitted");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, init] = fetcher.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(new URL(url).pathname.endsWith("/evidence")).toBe(true);
+    expect(url).not.toContain("/hypotheses");
+    expect(JSON.parse(init.body as string).candidate).toEqual(candidate);
+  });
+  it("never treats another candidate type as accepted evidence or reinterprets an idempotency key", async () => {
+    const f = await workforceFixture(),
+      evidence = nodepadCandidates[0],
+      hypothesis = nodepadCandidates[2];
+    const e = await f.nodepad.submit(f.c.id, f.ceo.id, evidence),
+      h = await f.nodepad.submit(f.c.id, f.ceo.id, hypothesis);
+    f.state.evidence.push(
+      `candidate:${evidence.idempotencyKey}`,
+      `candidate:${hypothesis.idempotencyKey}`,
+    );
+    await f.nodepad.sync(f.c.id);
+    const rows = await db
+      .select()
+      .from(validationRecords)
+      .where(
+        and(
+          eq(validationRecords.companyId, f.c.id),
+          eq(validationRecords.kind, "nodepad_candidate"),
+        ),
+      );
+    expect(rows.find((r) => r.id === e.id)?.status).toBe("accepted");
+    expect(rows.find((r) => r.id === h.id)?.status).toBe("submitted");
+    await expect(
+      f.nodepad.submit(f.c.id, f.ceo.id, {
+        ...hypothesis,
+        idempotencyKey: evidence.idempotencyKey,
+      }),
+    ).rejects.toThrow(/Idempotency/);
+    await expect(
+      f.nodepad.submit(f.c.id, randomUUID(), evidence),
+    ).rejects.toThrow(/company CEO/);
   });
 });
