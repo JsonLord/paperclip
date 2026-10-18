@@ -1,3 +1,12 @@
+import { workforceControlService } from "../services/workforce/control.js";
+import { workforceRoutes } from "../routes/workforce.js";
+import { tickWorkforceReporters } from "../services/workforce/scheduler.js";
+import { workforceMetrics } from "../services/workforce/metrics.js";
+import { authorizeWorkforceNodepad } from "../services/workforce/guards.js";
+import { workforceImportService } from "../services/workforce/importer.js";
+import { workforceService } from "../services/workforce/service.js";
+import { canonicalWorkforce } from "../services/workforce/definitions.js";
+import { workforceMembers } from "@paperclipai/db";
 import { goalRoutes } from "../routes/goals.js";
 import { julesSessionService } from "../services/jules-sessions.js";
 import { documentService } from "../services/documents.js";
@@ -125,6 +134,7 @@ function appFor(companyId: string, agentId?: string) {
     next();
   });
   app.use("/api", validationRoutes(db));
+  app.use("/api", workforceRoutes(db));
   app.use("/api", goalRoutes(db));
   app.use("/api", issueRoutes(db, {} as never));
   app.use(errorHandler);
@@ -218,7 +228,7 @@ describe("durable company-scoped validation management", () => {
     expect(again.id).toBe(f.p.id);
     expect(
       await db.select().from(agents).where(eq(agents.companyId, f.c.id)),
-    ).toHaveLength(1);
+    ).toHaveLength(46);
     expect(
       await db.select().from(issues).where(eq(issues.companyId, f.c.id)),
     ).toHaveLength(1);
@@ -497,18 +507,66 @@ describe("Nodepad isolation and candidate submission", () => {
     const compB = await programme();
 
     // Bind A to workspace-A
-    const svc = nodepadService(db, fixtureProvider({
-      companyId: compA.c.id, workspaceId: "workspace-A",
-      revision: "1", capturedAt: new Date().toISOString(), hypotheses: [], interviews: [], evidence: [], contradictions: [], researchGaps: [], experiments: [], materialChanges: [], clocks: { lastInterviewAt: null, lastCustomerInteractionAt: null, lastDirectEvidenceAt: null, lastMaterialMovementAt: null, lastExperimentAt: null }
-    }), async () => "fixture-a");
-    await svc.bind(compA.c.id, { baseUrl: "https://nodepad.example", workspaceId: "workspace-A", apiKeySecretRef: randomUUID() });
+    const svc = nodepadService(
+      db,
+      fixtureProvider({
+        companyId: compA.c.id,
+        workspaceId: "workspace-A",
+        revision: "1",
+        capturedAt: new Date().toISOString(),
+        hypotheses: [],
+        interviews: [],
+        evidence: [],
+        contradictions: [],
+        researchGaps: [],
+        experiments: [],
+        materialChanges: [],
+        clocks: {
+          lastInterviewAt: null,
+          lastCustomerInteractionAt: null,
+          lastDirectEvidenceAt: null,
+          lastMaterialMovementAt: null,
+          lastExperimentAt: null,
+        },
+      }),
+      async () => "fixture-a",
+    );
+    await svc.bind(compA.c.id, {
+      baseUrl: "https://nodepad.example",
+      workspaceId: "workspace-A",
+      apiKeySecretRef: randomUUID(),
+    });
 
     // Bind B to workspace-B
-    const svcB = nodepadService(db, fixtureProvider({
-      companyId: compB.c.id, workspaceId: "workspace-B",
-      revision: "1", capturedAt: new Date().toISOString(), hypotheses: [], interviews: [], evidence: [], contradictions: [], researchGaps: [], experiments: [], materialChanges: [], clocks: { lastInterviewAt: null, lastCustomerInteractionAt: null, lastDirectEvidenceAt: null, lastMaterialMovementAt: null, lastExperimentAt: null }
-    }), async () => "fixture-b");
-    await svcB.bind(compB.c.id, { baseUrl: "https://nodepad.example", workspaceId: "workspace-B", apiKeySecretRef: randomUUID() });
+    const svcB = nodepadService(
+      db,
+      fixtureProvider({
+        companyId: compB.c.id,
+        workspaceId: "workspace-B",
+        revision: "1",
+        capturedAt: new Date().toISOString(),
+        hypotheses: [],
+        interviews: [],
+        evidence: [],
+        contradictions: [],
+        researchGaps: [],
+        experiments: [],
+        materialChanges: [],
+        clocks: {
+          lastInterviewAt: null,
+          lastCustomerInteractionAt: null,
+          lastDirectEvidenceAt: null,
+          lastMaterialMovementAt: null,
+          lastExperimentAt: null,
+        },
+      }),
+      async () => "fixture-b",
+    );
+    await svcB.bind(compB.c.id, {
+      baseUrl: "https://nodepad.example",
+      workspaceId: "workspace-B",
+      apiKeySecretRef: randomUUID(),
+    });
 
     const syncA = await svc.sync(compA.c.id);
     expect(syncA.snapshot.workspaceId).toBe("workspace-A");
@@ -528,20 +586,30 @@ describe("Nodepad isolation and candidate submission", () => {
       sourceRef: "test-ref",
       contentHash: "a".repeat(64),
       pipelineRunRef: "run-ref",
-      summary: "test summary"
+      summary: "test summary",
     };
 
-    const firstSubmit = await service.submit(f.c.id, f.p.ceoAgentId, candidatePayload);
+    const firstSubmit = await service.submit(
+      f.c.id,
+      f.p.ceoAgentId,
+      candidatePayload,
+    );
     expect(firstSubmit.status).toBe("submitted");
 
-    const secondSubmit = await service.submit(f.c.id, f.p.ceoAgentId, candidatePayload);
+    const secondSubmit = await service.submit(
+      f.c.id,
+      f.p.ceoAgentId,
+      candidatePayload,
+    );
     expect(secondSubmit.id).toBe(firstSubmit.id);
     expect(secondSubmit.status).toBe("submitted");
 
-    await expect(service.submit(f.c.id, f.p.ceoAgentId, {
-      ...candidatePayload,
-      summary: "Different content but same key"
-    })).rejects.toThrow(/Idempotency key reused/);
+    await expect(
+      service.submit(f.c.id, f.p.ceoAgentId, {
+        ...candidatePayload,
+        summary: "Different content but same key",
+      }),
+    ).rejects.toThrow(/Idempotency key reused/);
   });
   it("submits idempotent candidates with provenance and forbids qualification fields", async () => {
     const f = await programme(),
@@ -1026,5 +1094,674 @@ describe("fixture vertical validation slice", () => {
     expect(
       (await programmes.summary(f.c.id)).latestCycle?.payload.mustWinOutcomes,
     ).toHaveLength(1);
+  });
+});
+
+// Agency fixtures exercise native PostgreSQL, task assignment, artifacts and Nodepad projection.
+// Remote providers remain explicit fixtures; none of these tests constitutes live validation.
+describe("Agency workforce native integration", () => {
+  async function workforceFixture() {
+    const f = await programme(),
+      { state, service: nodepad } = await bind(f);
+    state.hypotheses[0].blockedReason = null;
+    state.hypotheses[0].secondaryCount = 0;
+    state.hypotheses[0].directCount = 3;
+    state.interviews = [interview(1), interview(2), interview(3)];
+    state.researchGaps = [
+      "customer_language",
+      "dataset_analysis",
+      "counter_hypothesis",
+      "pricing_wtp",
+      "fake_door",
+      "go_pivot_stop",
+      "founder_intelligence",
+    ];
+    state.evidence = [
+      "target_customer:1",
+      "problem:1",
+      "customer_language:1",
+      "proposition:1",
+      "counter_hypothesis:1",
+    ];
+    await nodepad.sync(f.c.id);
+    await db
+      .update(validationProgrammes)
+      .set({ phase: "CONCENTRATE" })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    const wake = vi.fn(async () => ({ id: "fixture" }));
+    const workforce = workforceService(db, {
+      runtimes: { "github-actions": true, hermes_local: true, jules: true },
+      wake,
+    });
+    return { ...f, state, nodepad, workforce, wake };
+  }
+  function requestNeed(
+    gap: string,
+    stage: string,
+    workClass: string,
+    key = gap,
+  ) {
+    return {
+      eventKey: key,
+      eventType: "research_gap",
+      gap,
+      stage,
+      hypothesisId: "H-021",
+      sourceGapRef: gap,
+      datasetRefs: [],
+      reason:
+        "Resolve one current uncertainty with minimum cost and clear stop condition",
+      validationTask: validationTaskSchema.parse({
+        workClass,
+        hypothesisIds: ["H-021"],
+        writeScopes: stage === "frontend" ? ["website/**"] : [],
+        experimentQuestion: "Will visitors request a human conversation?",
+        behavioralMetric: "Qualified requests / qualified visitors",
+      }),
+      economics: {
+        informationGain: 0.8,
+        timeToSignalHours: 1,
+        cashCostCents: 0,
+        founderMinutes: 5,
+        julesStarts: 0,
+        externalInteractionBurden: "None",
+      },
+    };
+  }
+  it("imports all 45 once, keeps identities stable, dormant and company-scoped", async () => {
+    const f = await workforceFixture(),
+      imports = workforceImportService(db),
+      before = await imports.roster(f.c.id);
+    expect(before).toHaveLength(45);
+    expect(before.filter((m) => m.state === "DORMANT")).toHaveLength(44);
+    expect(before.filter((m) => m.state === "AVAILABLE")).toHaveLength(1);
+    const again = await imports.importWorkforce(f.c.id, "founder");
+    expect(again).toMatchObject({ created: 0, changed: 0, reused: 45 });
+    expect((await imports.roster(f.c.id)).map((m) => m.agentId).sort()).toEqual(
+      before.map((m) => m.agentId).sort(),
+    );
+    const native = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.companyId, f.c.id));
+    expect(native).toHaveLength(46);
+    expect(
+      native
+        .filter(
+          (a) =>
+            a.id !== f.ceo.id &&
+            a.metadata?.agencyId !== "founder-intelligence-reporter",
+        )
+        .every(
+          (a) =>
+            (a.runtimeConfig.heartbeat as { intervalSec: number })
+              .intervalSec === 0,
+        ),
+    ).toBe(true);
+    const legacy = await company();
+    await expect(
+      imports.importWorkforce(legacy.c.id, "founder"),
+    ).rejects.toThrow();
+    expect(await imports.roster(legacy.c.id)).toHaveLength(0);
+  });
+  it("retains override policy, detects changed and removed upstream definitions without deleting history", async () => {
+    const f = await workforceFixture(),
+      imports = workforceImportService(db),
+      [member] = await imports.roster(f.c.id);
+    await imports.override(
+      f.c.id,
+      member.id,
+      { disabled: true, requireFounderApproval: true },
+      "founder",
+    );
+    const changed = structuredClone(canonicalWorkforce);
+    changed.agents.find((a) => a.agencyId === member.agencyId)!.description +=
+      " Updated upstream";
+    expect(
+      (await imports.importWorkforce(f.c.id, "founder", changed)).changed,
+    ).toBe(1);
+    expect(
+      (await imports.roster(f.c.id)).find((m) => m.id === member.id),
+    ).toMatchObject({
+      state: "DISABLED",
+      drift: "changed",
+      overrides: { disabled: true },
+    });
+    const removed = structuredClone(changed);
+    removed.agents = removed.agents.filter(
+      (a) => a.agencyId !== member.agencyId,
+    );
+    removed.sourceAliases = Object.fromEntries(
+      Object.entries(removed.sourceAliases).filter(
+        ([, path]) => path !== member.definition.sourcePath,
+      ),
+    );
+    removed.capabilities = removed.capabilities.filter(
+      (c) => !c.agentIds.includes(member.agencyId),
+    );
+    removed.workflows = removed.workflows.filter(
+      (w) => !w.steps.some((s) => s.agencyId === member.agencyId),
+    );
+    await imports.importWorkforce(f.c.id, "founder", removed);
+    expect(
+      (await imports.roster(f.c.id)).find((m) => m.id === member.id),
+    ).toMatchObject({
+      state: "DISABLED",
+      drift: "upstream_removed",
+      agentId: member.agentId,
+    });
+    await expect(
+      imports.override(
+        f.c.id,
+        member.id,
+        { requireFounderApproval: false },
+        "founder",
+      ),
+    ).rejects.toThrow();
+  });
+  it("prevents direct dormant assignment and ensures idempotent activation with immutable intent", async () => {
+    const f = await workforceFixture(),
+      members = await workforceImportService(db).roster(f.c.id),
+      scout = members.find((m) => m.agencyId === "community-scout")!;
+    const n = requestNeed(
+      "customer_language",
+      "collection",
+      "community_exploration",
+    );
+    await expect(
+      issueService(db).create(f.c.id, {
+        title: "Bypass activation",
+        assigneeAgentId: scout.agentId,
+        validationTask: n.validationTask,
+      }),
+    ).rejects.toThrow(/Dormant/);
+    const a = await f.workforce.activate(f.c.id, n, f.ceo.id);
+    expect(a.status).toBe("ACTIVATED");
+    if (!("activation" in a)) throw new Error("Missing activation");
+    expect(f.wake).toHaveBeenCalledTimes(1);
+    expect((await f.workforce.activate(f.c.id, n, f.ceo.id)).status).toBe(
+      "REUSED",
+    );
+    expect(f.wake).toHaveBeenCalledTimes(1);
+    await expect(
+      f.workforce.activate(
+        f.c.id,
+        { ...n, reason: "Changed intent" },
+        f.ceo.id,
+      ),
+    ).rejects.toThrow(/different intent/);
+    await expect(
+      issueService(db).update(a.activation.issueId!, {
+        validationTask: { ...n.validationTask, workClass: "analysis" },
+      }),
+    ).rejects.toThrow(/intent changed/);
+    await expect(
+      workforceImportService(db).override(
+        f.c.id,
+        scout.id,
+        { disabled: true },
+        "founder",
+      ),
+    ).rejects.toThrow(/active work/);
+    await expect(
+      f.nodepad.submit(f.c.id, scout.agentId, {
+        hypothesisId: "H-021",
+        summary: "Raw collection is not accepted analysis",
+        sourceRefs: ["public:thread"],
+        idempotencyKey: "scout-write",
+      }),
+    ).rejects.toThrow();
+  });
+  it("golden slice: collection → analysis → design → frontend → skeptic → Venture Judge → CEO/Reporter/founder queue", async () => {
+    const f = await workforceFixture(),
+      trace: Array<{ agencyId: string; runtime: string }> = [];
+    async function run(
+      n: ReturnType<typeof requestNeed>,
+      expected: string,
+      runtime: string,
+    ) {
+      const activated = await f.workforce.activate(f.c.id, n, f.ceo.id);
+      expect(activated.status).toBe("ACTIVATED");
+      if (!("activation" in activated)) throw new Error("Not activated");
+      const a = activated.activation,
+        [m] = await db
+          .select()
+          .from(workforceMembers)
+          .where(eq(workforceMembers.id, a.memberId));
+      expect(m.agencyId).toBe(expected);
+      expect(a.runtime).toBe(runtime);
+      trace.push({ agencyId: m.agencyId, runtime: a.runtime });
+      const [artifact] = await db
+        .insert(issueWorkProducts)
+        .values({
+          companyId: f.c.id,
+          issueId: a.issueId!,
+          type: "document",
+          provider: "fixture",
+          title: `${expected} findings`,
+          status: "ready_for_review",
+          summary: "Traceable fixture findings; not live customer evidence",
+        })
+        .returning();
+      const report = {
+        report: `${expected}: preserve uncertainty and contradiction. Artifact ${artifact.id}`,
+        artifactIds: [artifact.id],
+        nodepadRefs: [n.sourceGapRef],
+        outcome: "reusable_artifact",
+        ...(expected === "venture-judge"
+          ? { ventureDecision: "MORE_VALIDATION_REQUIRED" }
+          : {}),
+      };
+      if (expected === "customer-investigator") {
+        const candidate = {
+          hypothesisId: "H-021",
+          summary: "Analyzed interview findings with provenance",
+          sourceRef: `artifact:${artifact.id}`,
+          contentHash: "a".repeat(64),
+          pipelineRunRef: `github-actions:fixture:${a.id}`,
+          idempotencyKey: a.id,
+        };
+        const submitted = await f.nodepad.submit(f.c.id, m.agentId, candidate);
+        expect(submitted.status).toBe("submitted");
+        f.state.evidence.push(`candidate:${a.id}`);
+        await f.nodepad.sync(f.c.id);
+      }
+      await f.workforce.complete(f.c.id, a.id, report, m.agentId);
+      expect(
+        (
+          await db
+            .select()
+            .from(workforceMembers)
+            .where(eq(workforceMembers.id, m.id))
+        )[0].state,
+      ).toBe(m.definition.activation.defaultState);
+      await expect(
+        f.workforce.complete(
+          f.c.id,
+          a.id,
+          { ...report, report: "CEO rewrites findings" },
+          f.ceo.id,
+        ),
+      ).rejects.toThrow(/assigned specialist/);
+      return { a, m };
+    }
+    await run(
+      requestNeed("customer_language", "collection", "community_exploration"),
+      "community-scout",
+      "hermes_local",
+    );
+    const n = requestNeed("dataset_analysis", "analysis", "analysis");
+    n.datasetRefs = ["artifact:collected-dataset"];
+    await run(n, "customer-investigator", "github-actions");
+    await run(
+      requestNeed("fake_door", "design", "analysis", "design"),
+      "fake-door-designer",
+      "github-actions",
+    );
+    await run(
+      requestNeed("fake_door", "frontend", "fake_door", "frontend"),
+      "fake-door-designer",
+      "jules",
+    );
+    const skeptic = requestNeed(
+      "pricing_wtp",
+      "evaluation",
+      "experiment_evaluation",
+    );
+    skeptic.eventType = "experiment_completed";
+    await run(skeptic, "wtp-skeptic", "github-actions");
+    await db
+      .update(validationProgrammes)
+      .set({ phase: "FOUNDER_HANDOFF" })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    await run(
+      requestNeed("go_pivot_stop", "decision", "synthesis"),
+      "venture-judge",
+      "github-actions",
+    );
+    const reporter = requestNeed("founder_intelligence", "analysis", "report");
+    await run(reporter, "founder-intelligence-reporter", "github-actions");
+    expect(
+      (await validationProgrammeService(db).summary(f.c.id)).latestReporter
+        ?.payload.independent,
+    ).toBe(true);
+    const summary = await assembleCeoContext(db, f.c.id);
+    expect(JSON.stringify(summary)).toContain("workforce");
+    expect(JSON.stringify(summary)).toContain("wtp-skeptic");
+    const response = await request(appFor(f.c.id, f.ceo.id))
+      .post(`/api/companies/${f.c.id}/validation/decision-requests`)
+      .set("idempotency-key", "agency-founder")
+      .send({
+        ...decision,
+        category: "pivot",
+        requiredAuthority: "founder",
+        question: "Approve a smaller segment after independent review?",
+      });
+    expect(response.status).toBe(201);
+    expect(response.body.payload.authority).toBe("founder");
+    expect(trace).toHaveLength(7);
+    expect(f.state.hypotheses[0].qualification).toBe("unqualified");
+    expect(
+      (await nodepadService(db).binding(f.c.id))?.snapshot?.hypotheses[0]
+        .qualification,
+    ).toBe("unqualified");
+  });
+  it("enforces actual Nodepad scopes, proposal-only writes and company boundaries", async () => {
+    const f = await workforceFixture(),
+      n = requestNeed(
+        "customer_language",
+        "collection",
+        "community_exploration",
+      ),
+      a = await f.workforce.activate(f.c.id, n, f.ceo.id);
+    if (!("activation" in a)) throw new Error("Missing activation");
+    const [m] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, a.activation.memberId));
+    const app = appFor(f.c.id, m.agentId),
+      base = `/api/companies/${f.c.id}/workforce`;
+    const context = await request(app).get(
+      `${base}/nodepad?scope=nodepad.context`,
+    );
+    expect(context.status).toBe(200);
+    expect(JSON.stringify(context.body)).not.toContain("apiKeySecretRef");
+    expect(
+      (await request(app).get(`${base}/nodepad?scope=nodepad.evidence`)).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app).get(
+          `/api/companies/${randomUUID()}/workforce/nodepad?scope=nodepad.context`,
+        )
+      ).status,
+    ).toBe(403);
+    const proposal = {
+      operation: "research_gap",
+      hypothesisId: "H-021",
+      sourceRefs: ["public:thread"],
+      summary: "Need human evidence about buying authority",
+      idempotencyKey: "gap-proposal",
+    };
+    expect(
+      (await request(app).post(`${base}/proposals`).send(proposal)).body.status,
+    ).toBe("pending_nodepad");
+    expect(
+      (
+        await request(app)
+          .post(`${base}/proposals`)
+          .send({ ...proposal, qualification: "validated" })
+      ).status,
+    ).toBe(400);
+    await expect(
+      authorizeWorkforceNodepad(db, f.c.id, m.agentId, "qualification"),
+    ).rejects.toThrow(/forbidden/);
+    await expect(
+      authorizeWorkforceNodepad(
+        db,
+        f.c.id,
+        m.agentId,
+        "research_gap",
+        "OTHER-H",
+      ),
+    ).rejects.toThrow(/active specialist hypothesis/);
+    expect((await request(app).get(base)).status).toBe(403); // specialist cannot inspect other specialists' independent findings
+    await f.workforce.complete(
+      f.c.id,
+      a.activation.id,
+      {
+        report: "Human interview required; no further automated collection",
+        artifactIds: [],
+        nodepadRefs: [],
+        outcome: "blocked",
+      },
+      m.agentId,
+    );
+    expect(
+      (await request(app).get(`${base}/nodepad?scope=nodepad.context`)).status,
+    ).toBe(403);
+    expect(
+      (await f.workforce.inspect(f.c.id)).members.find((x) => x.id === m.id)
+        ?.state,
+    ).toBe("BLOCKED");
+  });
+  it("stops terminal task execution and awaits an explicit traceable finding without inventing success", async () => {
+    const f = await workforceFixture(),
+      a = await f.workforce.activate(
+        f.c.id,
+        requestNeed("counter_hypothesis", "analysis", "analysis"),
+        f.ceo.id,
+      );
+    if (!("activation" in a)) throw new Error("Missing activation");
+    await issueService(db).update(a.activation.issueId!, { status: "done" });
+    const state = await f.workforce.inspect(f.c.id);
+    expect(
+      state.members.find((m) => m.id === a.activation.memberId)?.state,
+    ).toBe("WAITING");
+    expect(state.activations[0].status).toBe("AWAITING_RESULT");
+    const metrics = await workforceMetrics(db, f.c.id);
+    expect(metrics.completedTasks).toBe(0);
+    expect(metrics.busyWorkRatio.value).toBeNull();
+    const member = state.members.find((m) => m.id === a.activation.memberId)!;
+    await f.workforce.complete(
+      f.c.id,
+      a.activation.id,
+      {
+        report: "No material result; stop resource use",
+        artifactIds: [],
+        nodepadRefs: [],
+        outcome: "no_material_result",
+      },
+      member.agentId,
+    );
+    expect(
+      (await f.workforce.inspect(f.c.id)).members.find(
+        (m) => m.id === member.id,
+      )?.state,
+    ).toBe("DORMANT");
+  });
+  it("schedules only the independent Reporter once per day, even at human blockers", async () => {
+    const f = await workforceFixture();
+    f.state.hypotheses[0].blockedReason = "BLOCKED_ON_HUMAN_INTERVIEW";
+    await f.nodepad.sync(f.c.id);
+    const [p] = await db
+      .select()
+      .from(validationProgrammes)
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    await db
+      .update(validationProgrammes)
+      .set({
+        runtimeBindings: {
+          ...p.runtimeBindings,
+          "github-actions": {
+            repository: "acme/validation",
+            workflow: "workforce.yml",
+            ref: "main",
+            githubSecretRef: randomUUID(),
+            inputs: {},
+            workforcePacketInput: "workforce_packet",
+          },
+        },
+      })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    const later = new Date(Date.now() + 2 * 86400_000),
+      wake = vi.fn(async () => ({ id: "scheduled" }));
+    expect(await tickWorkforceReporters(db, later, wake)).toBe(1);
+    expect(await tickWorkforceReporters(db, later, wake)).toBe(0);
+    expect(wake).toHaveBeenCalledTimes(1);
+    const state = await f.workforce.inspect(f.c.id);
+    expect(state.members.filter((m) => m.state === "ACTIVE")).toHaveLength(1);
+    expect(state.members.find((m) => m.state === "ACTIVE")?.agencyId).toBe(
+      "founder-intelligence-reporter",
+    );
+  });
+  it("reuses legacy logical workers while retiring backend/duplicate seats with their history intact", async () => {
+    const f = await company(),
+      [customer] = await db
+        .insert(agents)
+        .values({
+          companyId: f.c.id,
+          name: "Customer old",
+          role: "general",
+          adapterType: "jules",
+          metadata: { founderosTemplateId: "customer,customer-researcher" },
+        })
+        .returning(),
+      [engineer] = await db
+        .insert(agents)
+        .values({
+          companyId: f.c.id,
+          name: "Product Engineer",
+          role: "engineer",
+          adapterType: "jules",
+          metadata: { founderosTemplateId: "engineering,product-engineer" },
+        })
+        .returning();
+    await validationProgrammeService(db).start(
+      f.c.id,
+      { ceoAgentId: f.ceo.id, visionGoalId: f.vision.id },
+      "founder",
+    );
+    const roster = await workforceImportService(db).roster(f.c.id);
+    expect(roster).toHaveLength(45);
+    expect(
+      roster.find((m) => m.agencyId === "customer-investigator")?.agentId,
+    ).toBe(customer.id);
+    expect(
+      (await db.select().from(agents).where(eq(agents.id, engineer.id)))[0],
+    ).toMatchObject({
+      status: "paused",
+      pauseReason: expect.stringContaining("Superseded"),
+    });
+  });
+
+  it("withdraws stale-phase execution and frees local work without pretending a remote job stopped", async () => {
+    const f = await workforceFixture(),
+      a = await f.workforce.activate(
+        f.c.id,
+        requestNeed("counter_hypothesis", "analysis", "analysis"),
+        f.ceo.id,
+      );
+    if (!("activation" in a)) throw new Error("Missing activation");
+    const cancel = vi.fn(async () => 1),
+      control = workforceControlService(db, cancel);
+    await db
+      .update(validationProgrammes)
+      .set({ phase: "REFINE" })
+      .where(eq(validationProgrammes.companyId, f.c.id));
+    await control.stopInvalid();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(
+      (await f.workforce.inspect(f.c.id)).members.find(
+        (m) => m.id === a.activation.memberId,
+      )?.state,
+    ).toBe("DORMANT");
+    await expect(
+      f.workforce.complete(
+        f.c.id,
+        a.activation.id,
+        {
+          report: "Late cancelled work",
+          artifactIds: [],
+          nodepadRefs: [],
+          outcome: "no_material_result",
+        },
+        "founder",
+        true,
+      ),
+    ).rejects.toThrow(/cancelled/);
+    const b = await f.workforce.activate(
+      f.c.id,
+      requestNeed("counter_hypothesis", "analysis", "analysis", "remote-stop"),
+      f.ceo.id,
+    );
+    if (!("activation" in b)) throw new Error("Missing remote activation");
+    const [member] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, b.activation.memberId));
+    const [run] = await db
+      .insert(heartbeatRuns)
+      .values({
+        companyId: f.c.id,
+        agentId: member.agentId,
+        status: "succeeded",
+        invocationSource: "automation",
+      })
+      .returning();
+    const [remote] = await db
+      .insert(githubActionRuns)
+      .values({
+        companyId: f.c.id,
+        paperclipRunId: run.id,
+        issueId: b.activation.issueId,
+        repository: "acme/validation",
+        workflow: "workforce.yml",
+        ref: "main",
+        credentialSecretRef: randomUUID(),
+        status: "dispatch_unknown",
+      })
+      .returning();
+    expect(
+      (
+        await control.stop(
+          f.c.id,
+          b.activation.id,
+          "CEO reprioritized",
+          "founder",
+        )
+      ).status,
+    ).toBe("REMOTE_STOP_PENDING");
+    expect(
+      (await f.workforce.inspect(f.c.id)).members.find(
+        (m) => m.id === member.id,
+      )?.state,
+    ).toBe("WAITING");
+    await db
+      .update(githubActionRuns)
+      .set({ status: "completed", conclusion: "cancelled" })
+      .where(eq(githubActionRuns.id, remote.id));
+    expect(
+      (
+        await control.stop(
+          f.c.id,
+          b.activation.id,
+          "Remote cancellation reconciled",
+          "founder",
+        )
+      ).status,
+    ).toBe("CANCELLED");
+  });
+  it("refuses the inherited live hypothesis-only adapter for Agency evidence submission", async () => {
+    const f = await workforceFixture(),
+      n = requestNeed("dataset_analysis", "analysis", "analysis");
+    n.datasetRefs = ["fixture:dataset"];
+    const a = await f.workforce.activate(f.c.id, n, f.ceo.id);
+    if (!("activation" in a)) throw new Error("Missing activation");
+    const [member] = await db
+      .select()
+      .from(workforceMembers)
+      .where(eq(workforceMembers.id, a.activation.memberId));
+    const submit = vi.fn(),
+      provider = {
+        ...fixtureProvider(f.state),
+        mode: "live" as const,
+        submitCandidate: submit,
+      };
+    await expect(
+      nodepadService(db, provider, async () => "fixture").submit(
+        f.c.id,
+        member.agentId,
+        {
+          hypothesisId: "H-021",
+          summary: "Analysis",
+          sourceRef: "fixture:dataset",
+          contentHash: "a".repeat(64),
+          pipelineRunRef: "fixture:analysis",
+          idempotencyKey: "unsafe-live",
+        },
+      ),
+    ).rejects.toThrow(/evidence\/provenance/);
+    expect(submit).not.toHaveBeenCalled();
   });
 });

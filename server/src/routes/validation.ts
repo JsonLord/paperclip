@@ -6,6 +6,7 @@ import {
 import { Router, type Request } from "express";
 import { and, eq } from "drizzle-orm";
 import {
+  workforceMembers,
   validationRecords,
   validationProgrammes,
   githubActionRuns,
@@ -96,6 +97,42 @@ export function validationRoutes(db: Db) {
       });
     },
   );
+  router.put(
+    "/companies/:companyId/validation/runtime-bindings/:runtime",
+    async (req, res) => {
+      assertBoard(req);
+      const id = company(req),
+        runtime = z.enum(["hermes_local", "jules"]).parse(req.params.runtime);
+      const config =
+        runtime === "jules"
+          ? z
+              .object({
+                repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+                startingBranch: z.string().min(1).max(200),
+              })
+              .strict()
+              .parse(req.body)
+          : z
+              .object({
+                model: z.string().min(1).max(200),
+                timeoutSec: z.number().int().positive().max(3600).optional(),
+              })
+              .strict()
+              .parse(req.body);
+      const p = await programmes.requireProgramme(id);
+      await db
+        .update(validationProgrammes)
+        .set({
+          runtimeBindings: { ...p.runtimeBindings, [runtime]: config },
+          updatedAt: new Date(),
+        })
+        .where(eq(validationProgrammes.companyId, id));
+      await programmes.audit(id, actor(req), "runtime.configured", p.id, {
+        runtime,
+      });
+      res.json({ status: "READY_CONFIG", runtime });
+    },
+  );
   router.post(
     "/companies/:companyId/validation/programme",
     async (req, res) => {
@@ -106,7 +143,7 @@ export function validationRoutes(db: Db) {
     },
   );
   router.get("/companies/:companyId/validation", async (req, res) => {
-    res.json(await programmes.summary(company(req)));
+    res.json(await programmes.summary(await manager(req)));
   });
   router.post("/companies/:companyId/validation/pause", async (req, res) => {
     assertBoard(req);
@@ -182,6 +219,25 @@ export function validationRoutes(db: Db) {
         })
         .strict()
         .parse(req.body);
+    if (req.actor.type === "agent") {
+      const [member] = await db
+        .select()
+        .from(workforceMembers)
+        .where(
+          and(
+            eq(workforceMembers.companyId, id),
+            eq(workforceMembers.agentId, actor(req)),
+          ),
+        );
+      if (
+        member &&
+        (member.agencyId !== "founder-intelligence-reporter" ||
+          member.state !== "ACTIVE")
+      )
+        throw forbidden(
+          "Only the activated Founder Intelligence Reporter may submit Agency reporting",
+        );
+    }
     const record = await programmes.record(
       id,
       "reporter",

@@ -1,3 +1,4 @@
+import { workforceRoutes } from "./routes/workforce.js";
 import { registerGithubActionsAdapter } from "./adapters/registry.js";
 import { validationRoutes } from "./routes/validation.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -157,6 +158,7 @@ export async function createApp(
   );
   api.use("/companies", companyRoutes(db));
   api.use(validationRoutes(db));
+  api.use(workforceRoutes(db));
   api.use("/companies", firmRoutes(db));
   api.use(julesRoutes(db));
   api.use(customerDiscoveryRoutes(db));

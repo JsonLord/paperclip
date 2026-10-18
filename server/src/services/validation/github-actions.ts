@@ -22,6 +22,10 @@ export const actionsConfigSchema = z.object({
   workflow: z.string().regex(/^[\w.-]+\.ya?ml$/),
   ref: z.string().min(1).max(200),
   githubSecretRef: z.string().uuid(),
+  workforcePacketInput: z
+    .string()
+    .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/)
+    .optional(),
   inputs: z
     .record(z.union([z.string().max(4000), z.boolean(), z.number().finite()]))
     .default({}),
@@ -169,8 +173,25 @@ export function githubActionsService(
   async function execute(
     ctx: AdapterExecutionContext,
   ): Promise<AdapterExecutionResult> {
-    const config = await configFor(ctx),
-      token = await resolveSecret(ctx.agent.companyId, config.githubSecretRef);
+    const config = await configFor(ctx);
+    if (ctx.context.workforcePacket && !config.workforcePacketInput)
+      throw conflict(
+        "READY_CONFIG: Actions workflow must declare an input for the typed workforce packet",
+      );
+    const packetInputs =
+      ctx.context.workforcePacket && config.workforcePacketInput
+        ? {
+            [config.workforcePacketInput]: JSON.stringify(
+              ctx.context.workforcePacket,
+            ),
+          }
+        : {};
+    if (Object.values(packetInputs).some((v) => v.length > 48000))
+      throw conflict("Workforce packet exceeds workflow input bound");
+    const token = await resolveSecret(
+      ctx.agent.companyId,
+      config.githubSecretRef,
+    );
     const row = await db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`actions:${ctx.runId}`}))`,
@@ -221,7 +242,7 @@ export function githubActionsService(
           config.repository,
           config.workflow,
           config.ref,
-          { ...config.inputs, paperclip_run_id: ctx.runId },
+          { ...config.inputs, ...packetInputs, paperclip_run_id: ctx.runId },
           token,
         );
         await db.insert(activityLog).values({

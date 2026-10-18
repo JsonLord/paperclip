@@ -1,3 +1,5 @@
+import { stopWorkforceIssue } from "./workforce/lifecycle.js";
+import { verifyWorkforceDispatch } from "./workforce/guards.js";
 import { validationProgrammes } from "@paperclipai/db";
 import { assertValidationIssue } from "./validation/task-policy.js";
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -881,6 +883,9 @@ export function issueService(db: Db) {
         if (nextLabelIds !== undefined) {
           await syncIssueLabels(updated.id, existing.companyId, nextLabelIds, tx);
         }
+        if (["done", "cancelled", "blocked"].includes(updated.status)) {
+          await stopWorkforceIssue(tx as unknown as Db, updated.companyId, updated.id, updated.status);
+        }
         const [enriched] = await withIssueLabels(tx, [updated]);
         return enriched;
       });
@@ -928,6 +933,7 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!issueCompany) throw notFound("Issue not found");
       await assertAssignableAgent(issueCompany.companyId, agentId);
+      await verifyWorkforceDispatch(db, issueCompany.companyId, agentId, id);
 
       const now = new Date();
       const sameRunAssigneeCondition = checkoutRunId

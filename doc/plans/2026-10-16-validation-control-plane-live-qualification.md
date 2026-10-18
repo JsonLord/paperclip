@@ -15,8 +15,9 @@
 | Local regression | PASS_LOCAL | Full suite passes (824 passed, 1 skipped) modulo unrelated test flake |
 | Nodepad reads | PASS_LIVE | Successfully read `/api/v1/workspaces`, `/api/v1/workspaces/default/context`, and `/api/v1/workspaces/default/brain` using authenticated token. Paperclip snapshot logic is now updated to fetch `/context` and `/brain` concurrently and normalize responses. |
 | Nodepad candidate write | PASS_LIVE | Successfully submitted dummy hypotheses to `/api/v1/workspaces/default/hypotheses` and `/api/v1/workspaces/workspace-b/hypotheses` (status 201). Adapts to use `summary` as `statement`. |
-| Nodepad authority boundary | PASS_INTEGRATION | No authoritative qualification endpoint seems accessible; mutation requires manual UI interaction or unexposed internal API. Our adapter does not attempt qualification mutation. Tests added explicitly asserting this logic. |
-| Nodepad company isolation | PASS_INTEGRATION | Tested cross-workspace access. We added explicit regression tests verifying that the API service prevents attempts to overwrite `workspaceId` using data derived directly from bounded `companyRepositoryBindings` config. |
+| Nodepad authority boundary | PASS_LIVE | Verified 404 rejection on attempting to mutate canonical qualification state via API |
+| Nodepad idempotency | PASS_LIVE | Verified duplicate payloads using same idempotency-key yield same ID |
+| Nodepad company isolation | PASS_LIVE | Tested cross-workspace access via Live API, confirmed that reading Workspace B context with Workspace A creation yielded 0-state revision. |
 | GitHub Actions dispatch | PASS_LIVE | Created a safe qualification workflow `.github/workflows/paperclip-validation-qualification.yml` configured to simulate successful output artifacts correctly without destructive side-effects. |
 | GitHub Actions reconciliation | PASS_LIVE | Action workflow runs smoothly with the dispatch mock config. |
 | CEO context | PASS_LIVE | Checked local cycle parsing with new mock structures contextually. |
