@@ -1,0 +1,65 @@
+name: Validation analysis
+run-name: "paperclip:${{ inputs.paperclip_run_id }}"
+on:
+  workflow_dispatch:
+    inputs:
+      paperclip_run_id:
+        description: Paperclip runtime correlation ID
+        required: true
+        type: string
+      force_failure:
+        description: Controlled failure for qualification
+        required: false
+        default: "false"
+        type: string
+      workforce_packet:
+        description: Optional typed task context; never canonical evidence
+        required: false
+        default: ""
+        type: string
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Write synthetic runtime result
+        env:
+          PAPERCLIP_RUN_ID: ${{ inputs.paperclip_run_id }}
+          FORCE_FAILURE: ${{ inputs.force_failure }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, uuid
+          run_id = os.environ["PAPERCLIP_RUN_ID"]
+          assert str(uuid.UUID(run_id)) == run_id, "Expected a canonical Paperclip run UUID"
+          forced = os.environ["FORCE_FAILURE"]
+          assert forced in ("true", "false"), "Invalid force_failure input"
+          pathlib.Path("output").mkdir(exist_ok=True)
+          pathlib.Path("output/result.json").write_text(json.dumps({
+              "version": "paperclip-runtime-qualification/v1",
+              "paperclip_run_id": run_id,
+              "synthetic": True,
+              "accepted": False,
+              "canonicalEvidence": False,
+              "controlledFailure": forced == "true",
+              "purpose": "Runtime transport and artifact qualification only"
+          }, sort_keys=True) + "\n")
+          PY
+      - name: Controlled execution failure
+        env:
+          FORCE_FAILURE: ${{ inputs.force_failure }}
+        run: |
+          if [ "$FORCE_FAILURE" = "true" ]; then exit 1; fi
+      - name: Upload runtime artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-result-${{ inputs.paperclip_run_id }}
+          path: output/result.json
+          if-no-files-found: error
+          retention-days: 7
