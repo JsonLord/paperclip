@@ -1,41 +1,59 @@
 name: Validation analysis
+
 run-name: "paperclip:${{ inputs.paperclip_run_id }}"
+
 on:
   workflow_dispatch:
     inputs:
       paperclip_run_id:
-        type: string
+        description: "Paperclip heartbeat/run correlation ID"
         required: true
-      force_failure:
         type: string
+
+      force_failure:
+        description: "Force controlled failure for qualification"
         required: false
-        default: 'false'
+        default: "false"
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  analyze:
+  qualify:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Simulate Validation Qualification
-        id: sim
+      - name: Run safe validation qualification
+        shell: bash
         run: |
-          echo "Simulating external validation task for paperclip run: ${{ inputs.paperclip_run_id }}"
+          set -euo pipefail
+
+          mkdir -p output
+
+          cat > output/result.json <<INNEREOF
+          {
+            "paperclip_run_id": "${{ inputs.paperclip_run_id }}",
+            "runtime": "github-actions",
+            "qualification": "synthetic",
+            "accepted": false,
+            "finding": "Remote GitHub Actions execution completed"
+          }
+INNEREOF
+
           if [ "${{ inputs.force_failure }}" = "true" ]; then
-            echo "Forcing failure for testing purposes"
+            echo "Controlled qualification failure requested."
+            # Simulating failure behavior using standard exit mechanism in Actions
             exit 1
           fi
 
-          mkdir -p output
-          echo '{"result": "success", "confidence": 95, "finding": "Live qualification confirmed"}' > output/result.json
-
-      - name: Upload artifact
+      - name: Upload qualification artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: validation-result-${{ inputs.paperclip_run_id }}
           path: output/result.json
+          if-no-files-found: error
