@@ -5,15 +5,20 @@ import {
   nodepadBindings,
   validationRecords,
   activityLog,
+  validationProgrammes,
   type Db,
 } from "@paperclipai/db";
 import {
   nodepadBindingSchema,
   nodepadCandidateSchema,
   nodepadSnapshotSchema,
+  nodepadCandidateReceiptSchema,
+  type NodepadCandidate,
+  type NodepadCandidateOf,
+  type NodepadCandidateReceipt,
   type NodepadSnapshot,
 } from "@paperclipai/shared";
-import { conflict, notFound } from "../../errors.js";
+import { conflict, notFound, forbidden } from "../../errors.js";
 import { secretService } from "../secrets.js";
 
 export interface NodepadBinding {
@@ -22,21 +27,103 @@ export interface NodepadBinding {
   workspaceId: string;
   apiKeySecretRef: string;
 }
+export interface NodepadCandidateInput<
+  T extends NodepadCandidate = NodepadCandidate,
+> {
+  actorId: string;
+  companyId: string;
+  workspaceId: string;
+  candidate: T;
+}
+type CandidateOperation<T extends NodepadCandidate> = (
+  binding: NodepadBinding,
+  credential: string,
+  input: NodepadCandidateInput<T>,
+) => Promise<NodepadCandidateReceipt>;
 export interface NodepadProvider {
   mode: "fixture" | "live";
-  /** Explicit evidence/provenance contract; a hypothesis creation endpoint is insufficient. */
-  candidateContract?: "evidence-v1";
   read(binding: NodepadBinding, credential: string): Promise<unknown>;
-  submitCandidate(
-    binding: NodepadBinding,
-    credential: string,
-    input: {
-      actorId: string;
-      companyId: string;
-      workspaceId: string;
-      candidate: ReturnType<typeof nodepadCandidateSchema.parse>;
-    },
-  ): Promise<{ candidateId: string; companyId: string; workspaceId: string }>;
+  submitEvidence: CandidateOperation<NodepadCandidateOf<"evidence_submission">>;
+  proposeResearchGap: CandidateOperation<NodepadCandidateOf<"research_gap">>;
+  proposeHypothesis: CandidateOperation<
+    NodepadCandidateOf<"hypothesis_proposal">
+  >;
+  proposeCounterHypothesis: CandidateOperation<
+    NodepadCandidateOf<"counter_hypothesis">
+  >;
+  proposeExperiment: CandidateOperation<NodepadCandidateOf<"experiment_spec">>;
+  submitExperimentResult: CandidateOperation<
+    NodepadCandidateOf<"experiment_result">
+  >;
+}
+/** Exhaustive dispatch is shared by every caller. No generic provider write or evidence fallback. */
+export function dispatchNodepadCandidate(
+  provider: NodepadProvider,
+  binding: NodepadBinding,
+  credential: string,
+  input: NodepadCandidateInput,
+): Promise<NodepadCandidateReceipt> {
+  const candidate = nodepadCandidateSchema.parse(input.candidate);
+  switch (candidate.type) {
+    case "evidence_submission":
+      if (typeof provider.submitEvidence !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation submitEvidence is unavailable",
+        );
+      return provider.submitEvidence(binding, credential, {
+        ...input,
+        candidate,
+      });
+    case "research_gap":
+      if (typeof provider.proposeResearchGap !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation proposeResearchGap is unavailable",
+        );
+      return provider.proposeResearchGap(binding, credential, {
+        ...input,
+        candidate,
+      });
+    case "hypothesis_proposal":
+      if (typeof provider.proposeHypothesis !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation proposeHypothesis is unavailable",
+        );
+      return provider.proposeHypothesis(binding, credential, {
+        ...input,
+        candidate,
+      });
+    case "counter_hypothesis":
+      if (typeof provider.proposeCounterHypothesis !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation proposeCounterHypothesis is unavailable",
+        );
+      return provider.proposeCounterHypothesis(binding, credential, {
+        ...input,
+        candidate,
+      });
+    case "experiment_spec":
+      if (typeof provider.proposeExperiment !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation proposeExperiment is unavailable",
+        );
+      return provider.proposeExperiment(binding, credential, {
+        ...input,
+        candidate,
+      });
+    case "experiment_result":
+      if (typeof provider.submitExperimentResult !== "function")
+        throw conflict(
+          "READY_CONFIG: Nodepad provider operation submitExperimentResult is unavailable",
+        );
+      return provider.submitExperimentResult(binding, credential, {
+        ...input,
+        candidate,
+      });
+    default: {
+      const exhaustive: never = candidate;
+      throw new Error(`Unsupported Nodepad candidate: ${exhaustive}`);
+    }
+  }
 }
 /** Explicit bridge contract, not a claim about an undocumented vendor API. No qualification writes. */
 export function nodepadHttpProvider(
@@ -74,6 +161,41 @@ export function nodepadHttpProvider(
     if (!response.ok)
       throw new Error(`Nodepad bridge request failed (${response.status})`);
     return response.json();
+  }
+  async function postCandidate(
+    b: NodepadBinding,
+    key: string,
+    path: string,
+    expected: NodepadCandidate["type"],
+    input: NodepadCandidateInput,
+  ) {
+    const candidate = nodepadCandidateSchema.parse(input.candidate);
+    if (candidate.type !== expected)
+      throw conflict(
+        "Nodepad candidate type does not match provider operation",
+      );
+    if (input.companyId !== b.companyId || input.workspaceId !== b.workspaceId)
+      throw forbidden("Nodepad input crossed company/workspace boundary");
+    const receipt = nodepadCandidateReceiptSchema.parse(
+      await request(b, key, path, {
+        method: "POST",
+        headers: {
+          "idempotency-key": `${b.companyId}:${candidate.idempotencyKey}`,
+        },
+        body: JSON.stringify({
+          actorId: input.actorId,
+          companyId: input.companyId,
+          workspaceId: input.workspaceId,
+          candidate,
+        }),
+      }),
+    );
+    if (
+      receipt.companyId !== b.companyId ||
+      receipt.workspaceId !== b.workspaceId
+    )
+      throw conflict("Nodepad response crossed company/workspace boundary");
+    return receipt;
   }
   return {
     mode: "live",
@@ -118,23 +240,25 @@ export function nodepadHttpProvider(
         },
       };
     },
-    submitCandidate: (b, key, input) =>
-      request(b, key, "hypotheses", {
-        method: "POST",
-        headers: {
-          "idempotency-key": `${b.companyId}:${input.candidate.idempotencyKey}`,
-        },
-        body: JSON.stringify({
-          title: `Candidate ${input.candidate.idempotencyKey.slice(0, 8)}`,
-          statement: input.candidate.summary,
-          supportingEvidenceIds: [],
-          contradictingEvidenceIds: [],
-        }),
-      }).then((res: any) => ({
-        candidateId: res.id,
-        companyId: b.companyId,
-        workspaceId: b.workspaceId,
-      })),
+    // These are bridge contracts, not proof of vendor endpoint availability. HTTP errors fail closed.
+    submitEvidence: (b, key, input) =>
+      postCandidate(b, key, "evidence", "evidence_submission", input),
+    proposeResearchGap: (b, key, input) =>
+      postCandidate(b, key, "research-gaps", "research_gap", input),
+    proposeHypothesis: (b, key, input) =>
+      postCandidate(b, key, "hypotheses", "hypothesis_proposal", input),
+    proposeCounterHypothesis: (b, key, input) =>
+      postCandidate(b, key, "counter-hypotheses", "counter_hypothesis", input),
+    proposeExperiment: (b, key, input) =>
+      postCandidate(
+        b,
+        key,
+        "experiments/specifications",
+        "experiment_spec",
+        input,
+      ),
+    submitExperimentResult: (b, key, input) =>
+      postCandidate(b, key, "experiments/results", "experiment_result", input),
   };
 }
 export function assertNodepadScope(
@@ -247,6 +371,8 @@ export function nodepadService(
     for (const candidate of candidates) {
       const remote = candidate.payload.result as { candidateId?: string };
       if (
+        (candidate.payload.candidate as { type?: string })?.type ===
+          "evidence_submission" &&
         remote.candidateId &&
         snapshot.evidence.includes(remote.candidateId) &&
         candidate.status !== "accepted"
@@ -295,23 +421,30 @@ export function nodepadService(
       previous: b.snapshot,
     };
   }
-  async function submit(companyId: string, actorId: string, input: unknown) {
+  async function submit(
+    companyId: string,
+    actorId: string,
+    input: unknown,
+    authority: { founder?: boolean } = {},
+  ) {
     const candidate = nodepadCandidateSchema.parse(input);
     const specialist = await authorizeWorkforceNodepad(
       db,
       companyId,
       actorId,
-      "evidence_submission",
+      candidate.type,
       candidate.hypothesisId,
     );
-    if (
-      specialist &&
-      provider.mode === "live" &&
-      provider.candidateContract !== "evidence-v1"
-    )
-      throw conflict(
-        "READY_CONFIG: Live Nodepad evidence/provenance candidate contract must be verified; creating hypotheses is not evidence submission",
-      );
+    if (!specialist && !authority.founder) {
+      const [programme] = await db
+        .select()
+        .from(validationProgrammes)
+        .where(eq(validationProgrammes.companyId, companyId));
+      if (programme?.ceoAgentId !== actorId)
+        throw forbidden(
+          "Nodepad candidate requires the company CEO, founder or an explicitly scoped specialist",
+        );
+    }
     const b = await binding(companyId);
     if (!b) throw notFound("Nodepad binding missing; READY_CONFIG");
     if (!b.snapshot?.hypotheses.some((h) => h.id === candidate.hypothesisId))
@@ -335,10 +468,13 @@ export function nodepadService(
         throw conflict("Idempotency key reused with a different candidate");
       return existing;
     }
-    const result = await provider.submitCandidate(
-      b,
-      await resolveSecret(companyId, b.apiKeySecretRef),
-      { actorId, companyId, workspaceId: b.workspaceId, candidate },
+    const result = nodepadCandidateReceiptSchema.parse(
+      await dispatchNodepadCandidate(
+        provider,
+        b,
+        await resolveSecret(companyId, b.apiKeySecretRef),
+        { actorId, companyId, workspaceId: b.workspaceId, candidate },
+      ),
     );
     if (
       result.companyId !== companyId ||
@@ -372,6 +508,7 @@ export function nodepadService(
       details: {
         workspaceId: b.workspaceId,
         candidateId: result.candidateId,
+        candidateType: candidate.type,
         idempotencyKey: candidate.idempotencyKey,
       },
     });

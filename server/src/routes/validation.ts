@@ -410,9 +410,11 @@ export function validationRoutes(db: Db) {
   router.post(
     "/companies/:companyId/validation/nodepad/candidates",
     async (req, res) => {
-      res
-        .status(201)
-        .json(await nodepad.submit(company(req), actor(req), req.body));
+      res.status(201).json(
+        await nodepad.submit(company(req), actor(req), req.body, {
+          founder: req.actor.type === "board",
+        }),
+      );
     },
   );
   router.post("/companies/:companyId/validation/handoff", async (req, res) => {
