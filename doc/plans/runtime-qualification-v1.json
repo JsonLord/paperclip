@@ -1,0 +1,31 @@
+{
+  "sourceSha": "930ae22aee2d2ee5f4229d148d5733709cdb1d6c",
+  "runtimeCodeSha": "5edad177af3fb246314d76d8cb7db702736b377a",
+  "branch": "codex/runtime-qualification-v1",
+  "sourceSha930ae22Preserved": "PASS",
+  "typedNodepadContract": "PASS_LOCAL",
+  "evidenceToHypothesisFallthrough": "IMPOSSIBLE",
+  "githubActionsAdapter": "PASS_LOCAL",
+  "githubActionsIntegration": "PASS_INTEGRATION",
+  "githubActionsLive": "PENDING_EXTERNAL",
+  "githubActionsExternalRunId": null,
+  "julesBroker": "PASS_LOCAL",
+  "julesLifecycle": "PASS_INTEGRATION",
+  "julesLive": "PENDING_EXTERNAL",
+  "julesExternalSessionId": null,
+  "engineeringBoundary": "PASS_LOCAL",
+  "defaultBranchWorkflowPatchReady": "PASS",
+  "defaultBranch": "master",
+  "observedDefaultBranchSha": "8f9f8ea950e6d5f448893d66090a6a516e0302ae",
+  "defaultBranchDiscovery": "BLOCKED_DEFAULT_BRANCH_WORKFLOW_DISCOVERY",
+  "workflowRuntimeCommit": "28a8f81ed0b21fc2c5bad4dfb9ed9a6df6597969",
+  "workflowMasterPatchCommit": "7ff4608f2bfbd0f8f6e46cec7c0eca0cea815778",
+  "remoteRuntimeCodeGate": "PASS",
+  "localTests": {
+    "passed": 915,
+    "skipped": 1,
+    "files": 144
+  },
+  "verdict": "RUNTIME_QUALIFICATION_CODE_READY",
+  "scope": "Deterministic code and native integration only; live runtime gates remain external."
+}
