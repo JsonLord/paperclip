@@ -9,6 +9,14 @@ set -uo pipefail
 log() { echo "[entrypoint $(date -uIseconds)] $*"; }
 
 export HOME="${HOME:-/paperclip}"
+export PAPERCLIP_HOME="${PAPERCLIP_HOME:-/paperclip}"
+if [ ! -d "$PAPERCLIP_HOME" ] || [ ! -w "$PAPERCLIP_HOME" ]; then
+  echo "[entrypoint] FATAL: PAPERCLIP_HOME ($PAPERCLIP_HOME) is missing or not writable by $(id -u):$(id -g)" >&2
+  return 1 2>/dev/null || bash -c "kill $$"
+fi
+touch "$PAPERCLIP_HOME/.test_write" || { echo "[entrypoint] FATAL: Cannot write to $PAPERCLIP_HOME" >&2; return 1 2>/dev/null || bash -c "kill $$"; }
+rm -f "$PAPERCLIP_HOME/.test_write"
+log "PAPERCLIP_HOME ($PAPERCLIP_HOME) is ready and writable"
 : "${PORT:=7860}"; export PORT
 export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-paperclip-default-secret-change-in-space-secrets}"
 OV_DIR="$HOME/.openviking"

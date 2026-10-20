@@ -19,11 +19,11 @@ COPY ui/package.json ui/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
+COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
 COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
 COPY packages/adapters/cursor-local/package.json packages/adapters/cursor-local/
 COPY packages/adapters/gemini-local/package.json packages/adapters/gemini-local/
-COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-gateway/
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
@@ -41,6 +41,11 @@ COPY patches/ patches/
 # than fail the Space build; deploy/hf-space/sync.sh refreshes the lockfile
 # beforehand when pnpm is available locally, which keeps the fast path.
 RUN pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+RUN set -eux; \
+    test -e /app/packages/plugins/sdk/package.json; \
+    test -e /app/server/node_modules/@paperclipai/plugin-sdk; \
+    ls -la /app/server/node_modules/@paperclipai/; \
+    readlink -f /app/server/node_modules/@paperclipai/plugin-sdk
 
 FROM base AS build
 WORKDIR /app
@@ -48,7 +53,15 @@ COPY --from=deps /app /app
 COPY . .
 RUN pnpm --filter @paperclipai/ui build
 RUN pnpm --filter @paperclipai/plugin-sdk build
-RUN pnpm --filter @paperclipai/server build
+RUN set -eux; \
+    test -f /app/packages/plugins/sdk/dist/index.js; \
+    test -f /app/packages/plugins/sdk/dist/index.d.ts; \
+    ls -la /app/packages/plugins/sdk/dist | head -50
+RUN set -eux; \
+    cd /app/server; \
+    node --input-type=module -e \
+      "import('@paperclipai/plugin-sdk').then(() => console.log('PLUGIN_SDK_RESOLUTION_OK'))"
+RUN pnpm --filter "@paperclipai/server..." build
 RUN pnpm --filter paperclipai build            # CLI (paperclipai) -> cli/dist/index.js, needed for `auth bootstrap-ceo`
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 RUN test -f cli/dist/index.js    || (echo "ERROR: cli build output missing" && exit 1)
@@ -59,8 +72,9 @@ COPY --chown=node:node --from=build /app /app
 
 # Agent CLIs (local adapters) + paperclip home
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip \
-  && chown node:node /paperclip
+  && install -d -o node -g node /paperclip \
+  && install -d -o node -g node /paperclip/instances \
+  && install -d -o node -g node /paperclip/instances/default
 
 # Python toolchain + hermes CLI + OpenViking memory server + backup/runtime tooling.
 # build-essential ensures any source-built openviking deps (tree-sitter etc.) succeed.
@@ -142,7 +156,6 @@ ENV NODE_ENV=production \
   JULES_OUTBOX_INTERVAL_MS=15000 \
   HEARTBEAT_SCHEDULER_ENABLED=true
 
-VOLUME ["/paperclip"]
 EXPOSE 7860
 
 USER node
