@@ -4,6 +4,61 @@ import type { SecretProvider } from "@paperclipai/shared";
 import { SECRET_PROVIDERS } from "@paperclipai/shared";
 import { secretService } from "./secrets.js";
 
+type ManagedLimits = Partial<
+  Pick<
+    typeof julesProfiles.$inferInsert,
+    "sessionStartLimit" | "sessionStartWindowSec" | "concurrentSessionLimit"
+  >
+>;
+
+function configuredPositiveInteger(
+  env: NodeJS.ProcessEnv,
+  names: string[],
+): number | undefined {
+  const name = names.find((entry) => env[entry]?.trim());
+  if (!name) return undefined;
+  const text = env[name]!.trim();
+  const value = Number(text);
+  if (
+    !/^\d+$/.test(text) ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > 2_147_483_647
+  ) {
+    throw new Error(`${name} must be a positive PostgreSQL integer`);
+  }
+  return value;
+}
+
+/** Numeric suffixes identify credentials; they do not imply quota or plan. */
+export function readJulesEnvironmentProfiles(
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  return Object.entries(env)
+    .flatMap(([name, raw]) => {
+      const match = /^JULES_API_([1-9]\d*)$/.exec(name);
+      if (!match || !raw?.trim()) return [];
+      const index = Number(match[1]);
+      if (!Number.isSafeInteger(index))
+        throw new Error("Jules credential suffix must be a safe integer");
+      const limits: ManagedLimits = {};
+      const settings = [
+        ["sessionStartLimit", "JULES_SESSION_START_LIMIT"],
+        ["sessionStartWindowSec", "JULES_SESSION_WINDOW_SEC"],
+        ["concurrentSessionLimit", "JULES_CONCURRENT_SESSION_LIMIT"],
+      ] as const;
+      for (const [field, setting] of settings) {
+        const value = configuredPositiveInteger(env, [
+          `${setting}_${index}`,
+          setting,
+        ]);
+        if (value !== undefined) limits[field] = value;
+      }
+      return [{ index, value: raw.trim(), limits }];
+    })
+    .sort((a, b) => a.index - b.index);
+}
+
 /**
  * Jules profiles reference an API key by `secretRef`, a UUID in Paperclip's
  * encrypted secret store that `resolveSecretValue` reads company-scoped. A
@@ -19,9 +74,11 @@ export function julesEnvProfileService(db: Db) {
 
   function defaultProvider(): SecretProvider {
     const configured = process.env.PAPERCLIP_SECRETS_PROVIDER;
-    return (configured && SECRET_PROVIDERS.includes(configured as SecretProvider)
-      ? configured
-      : "local_encrypted") as SecretProvider;
+    return (
+      configured && SECRET_PROVIDERS.includes(configured as SecretProvider)
+        ? configured
+        : "local_encrypted"
+    ) as SecretProvider;
   }
 
   /**
@@ -43,25 +100,27 @@ export function julesEnvProfileService(db: Db) {
     return [...new Set(["github", ...configured])];
   }
 
-  function envKeys() {
-    const found: Array<{ index: number; value: string }> = [];
-    for (let index = 1; index <= 8; index += 1) {
-      const value = process.env[`JULES_API_${index}`]?.trim();
-      if (value) found.push({ index, value });
-    }
-    return found;
-  }
-
   /** Idempotent: existing secrets and profiles are reused, never duplicated. */
-  async function ensureForCompany(companyId: string, actor?: { userId?: string | null }) {
-    const keys = envKeys();
-    if (!keys.length) return { created: 0, reused: 0, rotated: 0, unreadable: 0, profileIds: [] as string[] };
+  async function ensureForCompany(
+    companyId: string,
+    actor?: { userId?: string | null },
+  ) {
+    // Validate all configured limits before creating or rotating any secret.
+    const keys = readJulesEnvironmentProfiles();
+    if (!keys.length)
+      return {
+        created: 0,
+        reused: 0,
+        rotated: 0,
+        unreadable: 0,
+        profileIds: [] as string[],
+      };
 
-    const sessionStartLimit = Number(process.env.JULES_SESSION_START_LIMIT ?? 15);
-    const sessionStartWindowSec = Number(process.env.JULES_SESSION_WINDOW_SEC ?? 86_400);
     // Opt-in: push the current env value as a new version when a key was rotated in the
     // deployment's settings. Off by default so a restart loop does not pile up versions.
-    const rotateExisting = /^(1|true|yes)$/i.test(process.env.JULES_SEED_ROTATE ?? "");
+    const rotateExisting = /^(1|true|yes)$/i.test(
+      process.env.JULES_SEED_ROTATE ?? "",
+    );
     const capabilities = declaredCapabilities();
     const existingProfiles = await db.select().from(julesProfiles);
     const profileIds: string[] = [];
@@ -89,7 +148,11 @@ export function julesEnvProfileService(db: Db) {
           .then(() => true)
           .catch(() => false);
         if (!readable || rotateExisting) {
-          await secrets.rotate(existingSecret.id, { value: key.value }, { userId: actor?.userId ?? "system", agentId: null });
+          await secrets.rotate(
+            existingSecret.id,
+            { value: key.value },
+            { userId: actor?.userId ?? "system", agentId: null },
+          );
           rotated += 1;
           if (!readable) unreadable += 1;
         }
@@ -97,8 +160,12 @@ export function julesEnvProfileService(db: Db) {
       // Adopt by secretRef before name. A profile pointing at this company's key is this
       // company's profile whatever it is called, so an earlier deployment's naming does
       // not produce a second profile for the same key.
-      const already = (existingSecret && existingProfiles.find((profile) => profile.secretRef === existingSecret.id))
-        ?? existingProfiles.find((profile) => profile.name === profileName);
+      const already =
+        (existingSecret &&
+          existingProfiles.find(
+            (profile) => profile.secretRef === existingSecret.id,
+          )) ??
+        existingProfiles.find((profile) => profile.name === profileName);
       if (already) {
         profileIds.push(already.id);
         reused += 1;
@@ -106,27 +173,50 @@ export function julesEnvProfileService(db: Db) {
         // empty list forever otherwise, and an empty list denies everything. Widen it
         // in place; never narrow it, so a capability granted through the API is not
         // taken away by a restart.
-        const merged = [...new Set([...(already.capabilities ?? []), ...capabilities])];
-        if (merged.length !== (already.capabilities ?? []).length) {
-          await db.update(julesProfiles).set({ capabilities: merged, updatedAt: new Date() }).where(eq(julesProfiles.id, already.id));
+        const merged = [
+          ...new Set([...(already.capabilities ?? []), ...capabilities]),
+        ];
+        const limitsChanged = Object.entries(key.limits).some(
+          ([field, value]) => already[field as keyof ManagedLimits] !== value,
+        );
+        if (
+          limitsChanged ||
+          merged.length !== (already.capabilities ?? []).length
+        ) {
+          // Preserve profile id, usage history, health, enabled state and all limits
+          // that the operator has not explicitly configured in the environment.
+          await db
+            .update(julesProfiles)
+            .set({ ...key.limits, capabilities: merged, updatedAt: new Date() })
+            .where(eq(julesProfiles.id, already.id));
         }
         continue;
       }
 
-      const secret = existingSecret ?? (await secrets.create(
-        companyId,
-        {
-          name: secretName,
-          provider: defaultProvider(),
-          value: key.value,
-          description: `Jules API key imported from JULES_API_${key.index}`,
-        },
-        { userId: actor?.userId ?? "system", agentId: null },
-      ));
+      const secret =
+        existingSecret ??
+        (await secrets.create(
+          companyId,
+          {
+            name: secretName,
+            provider: defaultProvider(),
+            value: key.value,
+            description: `Jules API key imported from JULES_API_${key.index}`,
+          },
+          { userId: actor?.userId ?? "system", agentId: null },
+        ));
 
       const [profile] = await db
         .insert(julesProfiles)
-        .values({ name: profileName, secretRef: secret.id, sessionStartLimit, sessionStartWindowSec, capabilities })
+        .values({
+          name: profileName,
+          secretRef: secret.id,
+          sessionStartLimit: 15,
+          sessionStartWindowSec: 86_400,
+          concurrentSessionLimit: 3,
+          ...key.limits,
+          capabilities,
+        })
         .returning();
       profileIds.push(profile.id);
       created += 1;
