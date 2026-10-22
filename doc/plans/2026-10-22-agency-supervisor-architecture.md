@@ -59,3 +59,55 @@ Each activation persists intent before wake and re-pauses its agent on terminal
 completion/failure. Expired/ambiguous remote work keeps its capacity reservation;
 time alone cannot authorize a new session. Synthetic artifacts never become
 canonical Nodepad evidence. Historical PR #14 remains untouched.
+
+## Implemented modules and recovery contract
+
+`scripts/agency_supervisor/core.py` owns deterministic policy and selection;
+`controller.py` owns revision-CAS reservations and native run reconciliation;
+`validation.py` checks provenance, immutable source, scope and required outputs;
+`artifacts.py` reads immutable Git objects and real PR metadata without executing
+repository code; `manager.py` implements one explicit bounded Hermes review.
+`scripts/agency-supervisor.py` is the operator interface and
+`scripts/agency-supervisor-preflight.py` is the read-only live gate. Commands and
+exact qualification task configuration are in the live handoff document.
+
+An activation stores its reservation before assignment/resume, then stores
+DISPATCH_INTENT before the one wake. A lost response is recovered from native
+company/agent/issue context and the exact stable wake reason. The supplied
+idempotency key is not treated as proof that the native API deduplicates wakes.
+If no unique matching run exists, ambiguity holds the reservation. Scope-prefix
+collisions are rejected before resume; the native broker still arbitrates against
+other controllers. Budget and policy pauses cannot be resumed by selection.
+
+Terminal provider completion causes pause before artifact fetch. Validation
+FAIL/REVIEW_REQUIRED cannot advance a workflow. A product create intent is saved
+before POST; a lost response is recovered by native product lookup, never another
+POST. Cleanup intent survives a crash. Founder review likewise persists its issue
+and dispatch intents, reads back uncertain wakes, and persists review-cleanup intent
+before unassigning the review issue. Unknown issue creation stays held for review.
+
+The native completion service uses existing session/issue row locks and one DB
+transaction for product, review transition, audit and registration marker. The
+session reconciler merges remote-state JSON in SQL so a stale poll cannot erase
+that marker. Already-completed unregistered rows remain reconciliation candidates.
+Real PostgreSQL tests prove concurrent registration and document-CAS single-winner
+behavior. The existing native watcher remains the only provider watcher.
+
+## Limits and deployed compatibility
+
+The native failed/orphaned activity hooks in this branch are transition-based;
+a crash between transition persistence and a hook can omit that activity. Such an
+activation expires into a paused, capacity-held review state; it never authorizes
+a replacement remote start. A later outbox would improve delivery durability.
+The stable deployed source does not have these new native hooks or late-product
+registration. During the bounded live pass, the external controller can register
+existing native completion candidates through the same authenticated product API.
+
+MANUAL mode requires explicit reconcile invocations; it is not a background
+supervisor daemon. A stopped controller cannot promise immediate re-pause while
+offline. Use a maintained operator polling session for live qualification and
+verify native state before any further activation. Pausing a native agent is not
+remote cancellation. Terminal sessions are never automatically replaced, even
+when failed or completed without an artifact; a separately reviewed native task
+session reset is required for a future retry. None of this accepts evidence or
+weakens the typed Nodepad contract in its separately verified lineage.

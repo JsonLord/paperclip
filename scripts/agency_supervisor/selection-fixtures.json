@@ -1,0 +1,1396 @@
+{
+  "sourceSha": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+  "agents": [
+    {
+      "id": "native-founder-intelligence-reporter",
+      "companyId": "c",
+      "name": "Founder Intelligence Reporter",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Founder Intelligence Reporter"
+      },
+      "capabilities": "artifact.generate",
+      "metadata": {
+        "agencyId": "founder-intelligence-reporter",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "decision",
+        "agencySkills": [
+          "founder-intelligence-reporting",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-kill-agent",
+      "companyId": "c",
+      "name": "Kill Agent",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Kill Agent"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "kill-agent",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "decision",
+        "agencySkills": [
+          "evidence-audit",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-pivot-strategist",
+      "companyId": "c",
+      "name": "Pivot Strategist",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Pivot Strategist"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "pivot-strategist",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "decision",
+        "agencySkills": [
+          "hypothesis-framing",
+          "assumption-mapping",
+          "experiment-design",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-portfolio-allocator",
+      "companyId": "c",
+      "name": "Portfolio Allocator",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Portfolio Allocator"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "portfolio-allocator",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "decision",
+        "agencySkills": [
+          "evidence-audit",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-venture-judge",
+      "companyId": "c",
+      "name": "Venture Judge",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Venture Judge"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "venture-judge",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "decision",
+        "agencySkills": [
+          "evidence-audit",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-community-scout",
+      "companyId": "c",
+      "name": "Community Scout",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Community Scout"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "community-scout",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "discovery",
+        "agencySkills": [
+          "community-discovery",
+          "source-triangulation"
+        ],
+        "agencyWrites": [
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-customer-investigator",
+      "companyId": "c",
+      "name": "Customer Investigator",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Customer Investigator"
+      },
+      "capabilities": "artifact.generate",
+      "metadata": {
+        "agencyId": "customer-investigator",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "discovery",
+        "agencySkills": [
+          "pain-mining",
+          "customer-language",
+          "evidence-audit",
+          "source-triangulation"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-ethnographic-researcher",
+      "companyId": "c",
+      "name": "Ethnographic Researcher",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Ethnographic Researcher"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "ethnographic-researcher",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "discovery",
+        "agencySkills": [
+          "customer-interview",
+          "jtbd",
+          "community-discovery"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-problem-explorer",
+      "companyId": "c",
+      "name": "Problem Explorer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Problem Explorer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "problem-explorer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "discovery",
+        "agencySkills": [
+          "customer-interview",
+          "pain-mining"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-trend-scout",
+      "companyId": "c",
+      "name": "Trend Scout",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Trend Scout"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "trend-scout",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "discovery",
+        "agencySkills": [
+          "market-sizing",
+          "competitor-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-channel-researcher",
+      "companyId": "c",
+      "name": "Channel Researcher",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Channel Researcher"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "channel-researcher",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "distribution",
+        "agencySkills": [
+          "cac-modeling",
+          "experiment-design",
+          "value-proposition"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-community-activation-specialist",
+      "companyId": "c",
+      "name": "Community Activation Specialist",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Community Activation Specialist"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "community-activation-specialist",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "distribution",
+        "agencySkills": [
+          "community-discovery",
+          "experiment-design",
+          "value-proposition"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-content-experimenter",
+      "companyId": "c",
+      "name": "Content Experimenter",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Content Experimenter"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "content-experimenter",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "distribution",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-demand-generation-tester",
+      "companyId": "c",
+      "name": "Demand Generation Tester",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Demand Generation Tester"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "demand-generation-tester",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "distribution",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-outbound-experimenter",
+      "companyId": "c",
+      "name": "Outbound Experimenter",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Outbound Experimenter"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "outbound-experimenter",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "distribution",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-demand-skeptic",
+      "companyId": "c",
+      "name": "Demand Skeptic",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Demand Skeptic"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "demand-skeptic",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "evaluation",
+        "agencySkills": [
+          "evidence-audit",
+          "assumption-mapping",
+          "offer-design"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-distribution-skeptic",
+      "companyId": "c",
+      "name": "Distribution Skeptic",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Distribution Skeptic"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "distribution-skeptic",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "evaluation",
+        "agencySkills": [
+          "cac-modeling",
+          "evidence-audit",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-evidence-auditor",
+      "companyId": "c",
+      "name": "Evidence Auditor",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Evidence Auditor"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "evidence-auditor",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "evaluation",
+        "agencySkills": [
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-red-team-analyst",
+      "companyId": "c",
+      "name": "Red-Team Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Red-Team Analyst"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "red-team-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "evaluation",
+        "agencySkills": [
+          "evidence-audit",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-wtp-skeptic",
+      "companyId": "c",
+      "name": "WTP Skeptic",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical WTP Skeptic"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "wtp-skeptic",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "evaluation",
+        "agencySkills": [
+          "pricing-wtp",
+          "evidence-audit",
+          "assumption-mapping",
+          "offer-design"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-experiment-designer",
+      "companyId": "c",
+      "name": "Experiment Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Experiment Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "experiment-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "experimentation",
+        "agencySkills": [
+          "experiment-design",
+          "assumption-mapping",
+          "hypothesis-framing",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "experiment_spec",
+          "experiment_result"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-fake-door-designer",
+      "companyId": "c",
+      "name": "Fake-Door Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Fake-Door Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "fake-door-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "experimentation",
+        "agencySkills": [
+          "experiment-design",
+          "offer-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "experiment_spec",
+          "experiment_result"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-message-test-designer",
+      "companyId": "c",
+      "name": "Message-Test Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Message-Test Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "message-test-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "experimentation",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "positioning",
+          "customer-language"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "experiment_spec",
+          "experiment_result"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-pretotype-designer",
+      "companyId": "c",
+      "name": "Pretotype Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Pretotype Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "pretotype-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "experimentation",
+        "agencySkills": [
+          "experiment-design",
+          "offer-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "experiment_spec",
+          "experiment_result"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-pricing-test-designer",
+      "companyId": "c",
+      "name": "Pricing-Test Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Pricing-Test Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "pricing-test-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "experimentation",
+        "agencySkills": [
+          "experiment-design",
+          "offer-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "experiment_spec",
+          "experiment_result"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-assumption-mapper",
+      "companyId": "c",
+      "name": "Assumption Mapper",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Assumption Mapper"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "assumption-mapper",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "hypothesis",
+        "agencySkills": [
+          "assumption-mapping",
+          "customer-interview"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "hypothesis_proposal",
+          "counter_hypothesis"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-causal-analyst",
+      "companyId": "c",
+      "name": "Causal Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Causal Analyst"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "causal-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "hypothesis",
+        "agencySkills": [
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "hypothesis_proposal",
+          "counter_hypothesis"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-counter-hypothesis-generator",
+      "companyId": "c",
+      "name": "Counter-Hypothesis Generator",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Counter-Hypothesis Generator"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "counter-hypothesis-generator",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "hypothesis",
+        "agencySkills": [
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "hypothesis_proposal",
+          "counter_hypothesis"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-hypothesis-formulator",
+      "companyId": "c",
+      "name": "Hypothesis Formulator",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Hypothesis Formulator"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "hypothesis-formulator",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "hypothesis",
+        "agencySkills": [
+          "hypothesis-framing",
+          "assumption-mapping",
+          "jtbd",
+          "value-proposition"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "hypothesis_proposal",
+          "counter_hypothesis"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-opportunity-synthesizer",
+      "companyId": "c",
+      "name": "Opportunity Synthesizer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Opportunity Synthesizer"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "opportunity-synthesizer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "hypothesis",
+        "agencySkills": [
+          "assumption-mapping",
+          "hypothesis-framing",
+          "market-sizing"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap",
+          "hypothesis_proposal",
+          "counter_hypothesis"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-competitive-intelligence-analyst",
+      "companyId": "c",
+      "name": "Competitive Intelligence Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Competitive Intelligence Analyst"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "competitive-intelligence-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "intelligence",
+        "agencySkills": [
+          "competitor-mapping",
+          "market-sizing"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-lead-researcher",
+      "companyId": "c",
+      "name": "Lead Researcher",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Lead Researcher"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "lead-researcher",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "intelligence",
+        "agencySkills": [
+          "customer-interview",
+          "experiment-design"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-market-intelligence-analyst",
+      "companyId": "c",
+      "name": "Market Intelligence Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Market Intelligence Analyst"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "market-intelligence-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "intelligence",
+        "agencySkills": [
+          "market-sizing",
+          "competitor-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-review-miner",
+      "companyId": "c",
+      "name": "Review Miner",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Review Miner"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "review-miner",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "intelligence",
+        "agencySkills": [
+          "pain-mining"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-signal-analyst",
+      "companyId": "c",
+      "name": "Signal Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Signal Analyst"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "signal-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "intelligence",
+        "agencySkills": [
+          "competitor-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-copy-producer",
+      "companyId": "c",
+      "name": "Copy Producer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Copy Producer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "copy-producer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "production",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-demo-producer",
+      "companyId": "c",
+      "name": "Demo Producer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Demo Producer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "demo-producer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "production",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-landing-page-builder",
+      "companyId": "c",
+      "name": "Landing Page Builder",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Landing Page Builder"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "landing-page-builder",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "production",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-prototype-director",
+      "companyId": "c",
+      "name": "Prototype Director",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Prototype Director"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "prototype-director",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "production",
+        "agencySkills": [
+          "experiment-design",
+          "offer-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-visual-creative",
+      "companyId": "c",
+      "name": "Visual Creative",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Visual Creative"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "visual-creative",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "production",
+        "agencySkills": [
+          "experiment-design",
+          "value-proposition",
+          "evidence-audit"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-customer-language-analyst",
+      "companyId": "c",
+      "name": "Customer Language Analyst",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Customer Language Analyst"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "customer-language-analyst",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "proposition",
+        "agencySkills": [
+          "customer-language",
+          "customer-interview"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-offer-designer",
+      "companyId": "c",
+      "name": "Offer Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Offer Designer"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "offer-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "proposition",
+        "agencySkills": [
+          "offer-design",
+          "value-proposition",
+          "pricing-wtp",
+          "positioning",
+          "experiment-design"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-positioning-strategist",
+      "companyId": "c",
+      "name": "Positioning Strategist",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Positioning Strategist"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "positioning-strategist",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "proposition",
+        "agencySkills": [
+          "positioning",
+          "customer-language",
+          "value-proposition",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-pricing-strategist",
+      "companyId": "c",
+      "name": "Pricing Strategist",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Pricing Strategist"
+      },
+      "capabilities": "research.web, research.reddit",
+      "metadata": {
+        "agencyId": "pricing-strategist",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "proposition",
+        "agencySkills": [
+          "pricing-wtp",
+          "value-proposition",
+          "customer-language",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "native-value-position-designer",
+      "companyId": "c",
+      "name": "Value Proposition Designer",
+      "status": "paused",
+      "pauseReason": "manual",
+      "adapterType": "jules",
+      "adapterConfig": {
+        "promptTemplate": "Canonical Value Proposition Designer"
+      },
+      "capabilities": "research.web, research.reddit, research.linkedin",
+      "metadata": {
+        "agencyId": "value-position-designer",
+        "agencySourceCommit": "cf909b0b5435a229ac7c7fd7b6abcfa97fd06d09",
+        "agencyDivision": "proposition",
+        "agencySkills": [
+          "value-proposition",
+          "customer-language",
+          "positioning",
+          "jtbd",
+          "assumption-mapping"
+        ],
+        "agencyWrites": [
+          "evidence_submission",
+          "research_gap"
+        ],
+        "agencyApproval": {
+          "external_write": "required"
+        }
+      }
+    },
+    {
+      "id": "finance",
+      "companyId": "c",
+      "name": "Finance Lead",
+      "status": "paused",
+      "adapterType": "jules",
+      "metadata": {
+        "founderosTemplateId": "finance,finance"
+      },
+      "capabilities": "finance"
+    },
+    {
+      "id": "manager",
+      "companyId": "c",
+      "name": "Founder Manager",
+      "status": "idle",
+      "adapterType": "hermes_local",
+      "metadata": {
+        "founderosTemplateId": "founder-manager"
+      },
+      "capabilities": "governance"
+    },
+    {
+      "id": "engineer",
+      "companyId": "c",
+      "name": "Product Engineer",
+      "status": "idle",
+      "adapterType": "jules",
+      "metadata": {
+        "founderosTemplateId": "engineering,engineering"
+      },
+      "capabilities": "engineering"
+    }
+  ],
+  "cases": [
+    {
+      "task": "market sizing",
+      "agencyId": "market-intelligence-analyst"
+    },
+    {
+      "task": "problem discovery",
+      "agencyId": "problem-explorer"
+    },
+    {
+      "task": "pricing objection",
+      "agencyId": "wtp-skeptic"
+    },
+    {
+      "task": "fake-door experiment",
+      "agencyId": "fake-door-designer"
+    },
+    {
+      "task": "landing page design",
+      "agencyId": "landing-page-builder"
+    },
+    {
+      "task": "customer language analysis",
+      "agencyId": "customer-language-analyst"
+    },
+    {
+      "task": "evidence contradiction",
+      "agencyId": "evidence-auditor"
+    },
+    {
+      "task": "channel experiment",
+      "agencyId": "channel-researcher"
+    },
+    {
+      "task": "pivot analysis",
+      "agencyId": "pivot-strategist"
+    },
+    {
+      "task": "venture kill review",
+      "agencyId": "kill-agent"
+    }
+  ]
+}
