@@ -758,7 +758,11 @@ export async function ensurePostgresDatabase(
     `;
     if (existing.length > 0) return "exists";
 
-    await sql.unsafe(`create database "${databaseName}" encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0`);
+    try {
+      await sql.unsafe(`create database "${databaseName}" encoding 'UTF8'`);
+    } catch {
+      await sql.unsafe(`create database "${databaseName}"`);
+    }
     return "created";
   } finally {
     await sql.end();

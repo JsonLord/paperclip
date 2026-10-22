@@ -77,7 +77,13 @@ export function privateHostnameGuard(opts: {
       return;
     }
 
-    if (isLoopbackHostname(hostname) || allowSet.has(hostname)) {
+    if (
+      req.path === "/health" ||
+      req.path === "/api-docs" ||
+      hostname.endsWith(".hf.space") ||
+      isLoopbackHostname(hostname) ||
+      allowSet.has(hostname)
+    ) {
       next();
       return;
     }
