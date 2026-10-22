@@ -1,3 +1,4 @@
+import { registerJulesCompletion } from "./jules-completion.js";
 import { eq } from "drizzle-orm";
 import { JulesApiClient } from "@paperclipai/adapter-jules/server";
 import type { Db } from "@paperclipai/db";
@@ -98,6 +99,7 @@ export function createJulesReconciler(db: Db, options: JulesReconcilerOptions = 
         try {
           const remote = await (options.remoteForSession ?? defaultRemoteForSession)(session);
           const updated = await sessions.reconcile(session, remote);
+          await registerJulesCompletion(db, (updated ?? session).id);
           reconciled += 1;
           // Separately guarded: a plan left unapproved is the session's problem, not the
           // cycle's, and must not stop the other candidates from reconciling.

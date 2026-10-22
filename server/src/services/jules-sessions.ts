@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   julesCapacityEvents,
@@ -284,7 +284,7 @@ export function julesSessionService(db: Db, hooks: JulesLifecycleHooks = {}) {
     attachDispatchedSession,
     reconcile,
     listReconciliationCandidates: () => db.select().from(julesSessions)
-      .where(inArray(julesSessions.status, [...JULES_REMOTE_POLLABLE_STATES])),
+      .where(or(inArray(julesSessions.status, [...JULES_REMOTE_POLLABLE_STATES]), and(eq(julesSessions.status, "COMPLETED_UNVALIDATED"), sql`${julesSessions.resultJson}->>'workProductRegistered' is distinct from 'true'`))),
   };
 }
 

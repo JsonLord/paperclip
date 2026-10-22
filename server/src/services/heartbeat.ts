@@ -2311,7 +2311,6 @@ export function heartbeatService(db: Db) {
       }
       if (agent.adapterType === "jules") {
         const result = parseObject(adapterResult.resultJson);
-        const pullRequest = parseGitHubPullRequestUrl(result.pullRequestUrl);
         const remoteSessionId = readNonEmptyString(result.julesSessionId);
         if (remoteSessionId) {
           // The adapter result means dispatch/attachment succeeded, not that the
@@ -2320,30 +2319,8 @@ export function heartbeatService(db: Db) {
         } else if (julesAdmission?.kind === "ADMITTED") {
           await julesBroker.releaseAdmission(run.id);
         }
-        if (issueId && pullRequest) {
-          const existing = await db.select({ id: issueWorkProducts.id }).from(issueWorkProducts).where(and(
-            eq(issueWorkProducts.companyId, agent.companyId),
-            eq(issueWorkProducts.issueId, issueId),
-            eq(issueWorkProducts.provider, "github"),
-            eq(issueWorkProducts.externalId, pullRequest.externalId),
-          )).limit(1);
-          if (!existing[0]) await db.insert(issueWorkProducts).values({
-            companyId: agent.companyId,
-            projectId: issueRef?.projectId ?? null,
-            issueId,
-            type: "pull_request",
-            provider: "github",
-            externalId: pullRequest.externalId,
-            title: `Jules pull request ${pullRequest.externalId}`,
-            url: pullRequest.url,
-            status: "candidate",
-            reviewState: "pending",
-            isPrimary: true,
-            summary: "Registered automatically from the Jules remote session. Requires Paperclip validation and review.",
-            createdByRunId: run.id,
-            metadata: { julesSessionId: remoteSessionId, completionCandidate: result.completionCandidate === true },
-          });
-        }
+        // Work products are registered by the canonical durable reconciler, including late PRs.
+
       }
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
