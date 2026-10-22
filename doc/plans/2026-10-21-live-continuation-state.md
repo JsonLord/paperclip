@@ -1,5 +1,46 @@
 # Paperclip live continuation state — 2026-10-21
 
+## Agency Supervisor development checkpoint — 2026-10-22
+
+This checkpoint supersedes earlier development advice, not the deployed source.
+Review branch `codex/agency-supervisor-v1` starts at exact
+`559a18cd76e42b0242446c2f7464a57f5aa9c967`. Native current-run authority,
+terminal-session retention and transactional late-product registration are prepared
+alongside an external MANUAL API controller. They are **not deployed** to HF.
+Do not import the divergent qualification branch or replay provider repair.
+
+Local qualification: full typecheck/build/token checks PASS; 141 test files,
+802 passed / 1 skipped; 21 Python supervisor tests PASS; real PostgreSQL completion
+and revision-CAS integration PASS. Verdict is
+`PAPERCLIP_AGENCY_SUPERVISOR_PARTIAL`, with **zero new live specialist or Hermes
+runs**. Native password sign-in returned HTTP 401. The user is updating
+`PAPERCLIP_ADMIN_PASSWORD` securely; a saved environment draft must be published
+before assuming credentials changed. HF revision remains
+`763bd8154b9e417ea171749936da6e968b3cb6ea`, but its API reported
+`RUNNING_BUILDING` while public health was ok. Stop live dispatch until stable
+RUNNING and legitimate native auth are both verified. No deployment/restart was
+performed or authorized as a workaround.
+
+Fresh baseline backup `96ac0e53a57eedafdd0e3e6b311eaebb16841cdc`
+(2026-10-22T08:58:21Z) proves 48 AUX agents, 45 unique canonical IDs and all
+37 new specialists paused. This is not a fresh authenticated live roster read or
+post-workflow restore proof. PR #14 remains untouched at `c10730d8...`.
+
+Read these before further work:
+
+- [Qualification and exact blockers](2026-10-22-agency-supervisor-qualification.md)
+- [Architecture and recovery limits](2026-10-22-agency-supervisor-architecture.md)
+- [Exact bounded live workflow handoff](2026-10-22-agency-supervisor-live-handoff.md)
+- [Selective workforce port assessment](2026-10-22-validation-workforce-port-assessment.md)
+
+The planned two-specialist workflow is the pinned canonical `validate-problem`:
+Hypothesis Formulator → Evidence Auditor → one explicit Founder Manager review.
+Use the pinned catalog persona loader for reused roles. Max active 1; one new
+session per specialist; no replacement on ambiguity, validation failure or expiry.
+After credentials are available, run the read-only preflight first, inspect native
+capacity, then follow the handoff. No canonical evidence acceptance or PR merging.
+The authoritative live source below remains unchanged.
+
 This document is the canonical startup note for future Codex/Jules sessions working on the live AUX Paperclip deployment.
 
 It records the verified state after:

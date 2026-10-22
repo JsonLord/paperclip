@@ -430,6 +430,8 @@ class SupervisorTests(unittest.TestCase):
         product = artifact(act)
         for change in [
             {"paths": ["outside/code.ts"]},
+            {"paths": ["qualification/.env"]},
+            {"binaryOrSymlink": True},
             {"bodies": {"qualification/result.md": "-----BEGIN PRIVATE KEY-----"}},
             {"remoteSessionId": "foreign"},
         ]:
