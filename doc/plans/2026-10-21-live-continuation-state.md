@@ -1,5 +1,19 @@
 # Paperclip live continuation state — 2026-10-21
 
+## Live follow-up — 2026-10-22
+
+After environment refresh, native password login and stable RUNNING preflight
+passed. One supervisor workflow `2275619a-6e55-48b4-902f-94da9b896c77` exists on
+control issue `c3453977-d9f2-4509-9c3e-ea16d309cecb`. Exactly one Hypothesis
+Formulator wake created native run `0d6af1b0-ed5f-4b8e-8891-d3f89822dab8`, denied
+before allocation: `jules_auth_required`, no eligible profile accessible credential.
+No Jules remote session, no auditor wake, no Hermes review. First issue blocked/
+unassigned; specialist re-paused. Authenticated final roster 48/45/0, all 37 new
+paused, auditor paused, zero live runs/active reservations. Do not retry/rebind or
+create replacement workflow issues blindly. Provider repair now requires a
+separate bounded review. HF revision/source remain unchanged. User next requested
+a separate native admin API secret; BETTER_AUTH_SECRET remains signing-only.
+
 ## Agency Supervisor development checkpoint — 2026-10-22
 
 This checkpoint supersedes earlier development advice, not the deployed source.

@@ -54,6 +54,49 @@ recovering to a genuine structured test decision. Fixtures are not live provider
 8. Founder review cleanup could be lost after a terminal checkpoint. Cleanup has a
    durable intent state and is safely resumed before marking the review terminal.
 
+## Live follow-up after credential refresh
+
+Updated native password login and the full read-only preflight passed. HF returned
+stable RUNNING at its unchanged revision; all ten live roster routing cases passed.
+One MANUAL `validate-problem` workflow was created:
+`2275619a-6e55-48b4-902f-94da9b896c77`, control issue
+`c3453977-d9f2-4509-9c3e-ea16d309cecb`. First issue
+`c2e3ee5d-7fcb-480a-bc03-99d38340a6f0`; queued auditor issue
+`e8fbebb8-fb86-426a-8119-b80171dc2cf6` remains unassigned backlog.
+
+Exactly one Hypothesis Formulator wake produced native run
+`0d6af1b0-ed5f-4b8e-8891-d3f89822dab8`, agent
+`5fc4c503-6699-4f1d-8eb1-4355c6d3d6e1`. Admission was DENIED with
+`jules_auth_required`: "No eligible profile has an accessible credential".
+There is no remote session ID or artifact. Reconciliation recorded FAIL, blocked
+and unassigned the issue, and re-paused the specialist. No replacement wake,
+provider rebind, auditor activation or Hermes review was attempted.
+
+Final authenticated status: 48 agents, 45 unique canonical IDs, zero duplicates,
+38 mapped roles paused (all 37 new specialists plus the reused auditor), zero
+active native runs and zero active supervisor reservations. The 6 existing global
+profiles were not modified. Their stored 15-start limits are inherited deployed
+behavior, not the user's requested 10-start configuration; no quota/deployment
+housekeeping was performed. The earlier auth/Space blockers below are historical;
+the current blocker is native provider credential eligibility. A fresh post-attempt
+backup is still pending verification.
+
+```ini
+LIVE_MULTI_AGENT_QUALIFICATION = PARTIAL
+LIVE_SPECIALIST_1 = hypothesis-formulator
+LIVE_SPECIALIST_1_PAPERCLIP_RUN = 0d6af1b0-ed5f-4b8e-8891-d3f89822dab8
+LIVE_SPECIALIST_1_JULES_SESSION = none (admission denied)
+LIVE_SPECIALIST_1_VALIDATION = FAIL
+LIVE_SPECIALIST_2 = none
+FOUNDER_MANAGER_REVIEW = NOT_RUN
+NEW_AGENCY_SPECIALISTS_PAUSED_FINAL = 37 (authenticated live check)
+FRESH_BACKUP = NOT_REQUIRED (baseline verified; post-attempt proof pending)
+```
+
+The user next requested a separate admin API secret. That is a new focused change;
+`BETTER_AUTH_SECRET` is not accepted as an API credential and is not used to forge
+sessions. Prepare the separate token change from the deployed source lineage.
+
 ## Live observations and stop gate
 
 No new control/step issues, agent resumes, wakes, provider sessions, PRs or deployment
