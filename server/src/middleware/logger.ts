@@ -26,8 +26,13 @@ const sharedOpts = {
   singleLine: true,
 };
 
+export const HTTP_CREDENTIAL_REDACTION = [
+  "req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]',
+];
+
 export const logger = pino({
   level: "debug",
+  redact: { paths: HTTP_CREDENTIAL_REDACTION, censor: "[REDACTED]" },
 }, pino.transport({
   targets: [
     {

@@ -7,6 +7,7 @@ import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 import type { DeploymentMode } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
+import { resolveAdminApiToken } from "../auth/admin-api-token.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -78,6 +79,24 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     if (!token) {
       next();
       return;
+    }
+
+    if (opts.deploymentMode === "authenticated") {
+      try {
+        const userId = await resolveAdminApiToken(db, token);
+        if (userId) {
+          req.actor = {
+            type: "board", userId, isInstanceAdmin: true,
+            source: "admin_token", runId: runIdHeader ?? undefined,
+          };
+          next();
+          return;
+        }
+      } catch {
+        // An unavailable identity/role lookup cannot grant board access.
+        next(new Error("Admin API identity lookup unavailable"));
+        return;
+      }
     }
 
     const tokenHash = hashToken(token);
