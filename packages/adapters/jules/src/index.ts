@@ -16,3 +16,6 @@ The adapter calls the REST API directly and never invokes a local Jules executab
 `;
 export { JULES_PROMPT_VERSION, JULES_OUTCOME_TEMPLATES, createJulesSessionSpec, renderJulesPrompt } from "./prompts.js";
 export type { JulesSessionSpec, JulesOutcomeTemplate, ExternalActionPolicy, LinearMode } from "./prompts.js";
+
+export { currentExecutionIdentity, renderExecutionIdentity, validateArtifactProvenance } from "./execution-identity.js";
+export type { CurrentExecution } from "./execution-identity.js";

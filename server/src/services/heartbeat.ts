@@ -1,3 +1,4 @@
+import { currentExecutionIdentity } from "@paperclipai/adapter-jules";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
@@ -2175,6 +2176,9 @@ export function heartbeatService(db: Db) {
           );
         }
       }
+      Object.assign(context, currentExecutionIdentity({ runId: run.id, agentId: agent.id, companyId: agent.companyId,
+        issueId, history: JSON.stringify(context.assignment ?? {}) }));
+      await db.update(heartbeatRuns).set({ contextSnapshot: context }).where(eq(heartbeatRuns.id, run.id));
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
         if (meta.env && secretKeys.size > 0) {
           for (const key of secretKeys) {
