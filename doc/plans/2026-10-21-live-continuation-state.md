@@ -1,5 +1,22 @@
 # Paperclip live continuation state — 2026-10-21
 
+## Latest backup and admin-token follow-up — 2026-10-22
+
+Post-attempt backup `4d6aeec99c602a6d507eadc8e20de6318a0a71ad` (14:04:39Z)
+verified: workflow journal persisted, diagnostics contain the one failed native run
+and zero matching Jules session/capacity entries; 48 agents / 45 canonical IDs /
+37 new paused. No restore test performed. User requested separate native admin API
+token support. Focused branch `codex/native-admin-api-token-v1` at
+`2b6c978a9e9b4f15a5eb328d88cfcb5c1cf00efa` starts exact deployed `0eba2bb`,
+full typecheck/build PASS, 785 tests passed / 1 skipped. It is pushed and remotely
+verified but NOT deployed. Secure `PAPERCLIP_ADMIN_API_TOKEN` entry is configured
+for app + HF provisioning; user must provide a NEW random token, distinct from
+BETTER_AUTH_SECRET/UI password, and publish the environment. Bound existing admin
+email is `leon.m.gr45@gmail.com`. Deployment preview contains exactly seven changed
+files, reviewed tree `44324cf03ee4c8f4882f1a88b7b6a0dc8f226d60`, parent HF revision
+`763bd8154b9e417ea171749936da6e968b3cb6ea`. Preserve HF overlay/config; no wholesale
+supervisor deployment. Review receipt and patch in /workspace/agency-supervisor-qualification.
+
 ## Live follow-up — 2026-10-22
 
 After environment refresh, native password login and stable RUNNING preflight

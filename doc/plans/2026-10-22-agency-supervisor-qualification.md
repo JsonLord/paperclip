@@ -54,6 +54,17 @@ recovering to a genuine structured test decision. Fixtures are not live provider
 8. Founder review cleanup could be lost after a terminal checkpoint. Cleanup has a
    durable intent state and is safely resumed before marking the review terminal.
 
+## Fresh post-attempt backup verified
+
+Backup `4d6aeec99c602a6d507eadc8e20de6318a0a71ad` at
+2026-10-22T14:04:39Z contains the workflow journal and its failed native run ID in
+the SQL document data. The diagnostic runs export contains exactly one matching
+failed run; Jules sessions and capacity exports contain zero matches for that run.
+The SQL Jules sessions table also contains zero matching sessions. Agent export
+remains 48 native / 45 canonical / 37 new paused. FRESH_BACKUP = PASS for this
+safely blocked attempt. No restore/restart exercise was performed. Historical
+baseline-only/pending statements below are superseded by this receipt.
+
 ## Live follow-up after credential refresh
 
 Updated native password login and the full read-only preflight passed. HF returned
