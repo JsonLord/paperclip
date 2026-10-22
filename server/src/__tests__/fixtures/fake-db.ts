@@ -56,6 +56,20 @@ function equalityPairs(condition: any): Array<{ column: any; value: unknown; op:
 }
 
 function matches(table: any, row: Row, condition: any): boolean {
+  // Preserve logical groups: flattening OR into equalityPairs silently turned the
+  // completed-candidate recovery query into an AND and hid all active sessions.
+  const chunks: any[] = condition?.queryChunks ?? [];
+  const textOf = (chunk: any) => Array.isArray(chunk?.value) ? chunk.value.join("").trim().toLowerCase() : "";
+  const groups = chunks.filter((chunk) => chunk?.queryChunks);
+  if (chunks.some((chunk) => textOf(chunk) === "or")) {
+    return groups.some((group) => matches(table, row, group));
+  }
+  if (chunks.some((chunk) => textOf(chunk) === "and")) {
+    return groups.every((group) => matches(table, row, group));
+  }
+  if (groups.length === 1 && textOf(chunks[0]) === "(" && textOf(chunks[chunks.length - 1]) === ")") {
+    return matches(table, row, groups[0]);
+  }
   const pairs = equalityPairs(condition);
   if (!pairs.length) return true;
   return pairs.every(({ column, value, op }) => {

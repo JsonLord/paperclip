@@ -233,24 +233,10 @@ export async function execute(
     "",
   ).trim();
   const existing = existingId ? await api.getSession(existingId) : null;
-  // A session that is still live is the cheap path and the good one: continuing costs
-  // nothing against the daily start quota and keeps everything the worker has already
-  // read. Until now a wake on live work fetched the session and polled it in silence —
-  // the freshly rendered prompt was computed and thrown away, so the worker was never
-  // told why it had been woken or that the outcome had been restated.
-  //
-  // A COMPLETED session is left alone: it is a completion candidate waiting on
-  // validation, not work to push further. FAILED and CANCELLED cannot be continued at
-  // all, and re-polling one stranded the outcome forever, so those start afresh.
+  // A bound session is never replaced merely because it became terminal or lacked a PR.
+  // An explicitly reviewed retry must reset the task session through the native API.
   const resumable = existing ? !TERMINAL.has(stateOf(existing)) : false;
-  // A COMPLETED session is only worth preserving if it delivered something. One that
-  // finished without a pull request delivered nothing, and leaving it in place made the
-  // outcome permanently undispatchable: every later wake found the same dead session,
-  // returned it unchanged, and the issue sat in `todo` for good.
-  const spent = existing
-    ? stateOf(existing) === "COMPLETED" && extractPullRequest(existing) !== null
-    : false;
-  if (existing && (resumable || spent)) {
+  if (existing) {
     session = existing;
     if (resumable) {
       const continuation =
@@ -327,7 +313,7 @@ export async function execute(
     .catch(() => ({ items: [] }));
   const lastActivity = activities.items.at(-1);
   return {
-    exitCode: state === "FAILED" ? 1 : 0,
+    exitCode: state === "FAILED" || state === "CANCELLED" ? 1 : 0,
     signal: null,
     timedOut: false,
     sessionParams: {
