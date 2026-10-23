@@ -2,6 +2,7 @@
 """MANUAL external Agency Supervisor through authenticated native Paperclip APIs."""
 import argparse, importlib.util, json, os, pathlib, sys
 from agency_supervisor.controller import Supervisor, SafetyError
+from agency_supervisor.api import AdminTokenApi
 from agency_supervisor.artifacts import read_product
 from agency_supervisor.core import SOURCE_SHA
 from agency_supervisor.manager import start_review, reconcile_review, packet
@@ -38,6 +39,7 @@ def main():
             "PAPERCLIP_BASE_URL", "https://leon4gr45-paperclip-founder.hf.space"
         ),
     )
+    p.add_argument("--auth", choices=["password", "admin-token"], default="password")
     p.add_argument("--company", default="AUX")
     p.add_argument("--control-issue", required=True)
     p.add_argument("--issue")
@@ -49,7 +51,11 @@ def main():
     p.add_argument("--issues")
     p.add_argument("--cache", default="/workspace/.cache/agency-supervisor")
     args = p.parse_args()
-    api = native.Api(args.base_url)
+    api = (
+        AdminTokenApi(args.base_url)
+        if args.auth == "admin-token"
+        else native.Api(args.base_url)
+    )
     companies = api.request("GET", "/api/companies")
     matches = [
         c

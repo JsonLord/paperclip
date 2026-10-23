@@ -5,6 +5,10 @@ import importlib.util
 import json
 import pathlib
 import os
+import re
+from agency_supervisor.api import AdminTokenApi
+from agency_supervisor.controller import SafetyError, Supervisor
+from agency_supervisor.core import ACTIVE
 import urllib.request
 
 from agency_supervisor.core import SOURCE_SHA, ROUTES, describe_task, recommend
@@ -36,11 +40,27 @@ def main():
     parser.add_argument(
         "--catalog", required=True, help="Local pinned agency-agents Git repository"
     )
+    parser.add_argument(
+        "--auth", choices=["password", "admin-token"], default="password"
+    )
+    parser.add_argument(
+        "--expect-hf-sha", required=True, help="Reviewed deployed full SHA"
+    )
+    parser.add_argument(
+        "--control-issue",
+        required=True,
+        help="Board-controlled durable supervisor journal",
+    )
     args = parser.parse_args()
+    native.require(
+        bool(re.fullmatch(r"[0-9a-f]{40}", args.expect_hf_sha)),
+        "Reviewed full HF SHA required",
+    )
     # Verify public, immutable prerequisites before attempting authenticated access.
     space = public_json("https://huggingface.co/api/spaces/Leon4gr45/Paperclip-Founder")
     native.require(
-        space["sha"] == "763bd8154b9e417ea171749936da6e968b3cb6ea",
+        space["sha"] == args.expect_hf_sha
+        and space.get("runtime", {}).get("sha") == args.expect_hf_sha,
         "STOP: live HF revision drift",
     )
     native.require(
@@ -53,7 +73,11 @@ def main():
         "STOP: PR14 regression fixture changed",
     )
     native.load_catalog(args.catalog, SOURCE_SHA)
-    api = native.Api(args.base_url)
+    api = (
+        AdminTokenApi(args.base_url)
+        if args.auth == "admin-token"
+        else native.Api(args.base_url)
+    )
     companies = api.request("GET", "/api/companies")
     matches = [
         c
@@ -85,6 +109,13 @@ def main():
     native.require(
         not any(r["status"] in ("running", "queued") for r in live),
         "STOP: active native work",
+    )
+    controller = Supervisor(api, company, args.control_issue)
+    state, _ = controller.read()
+    native.require(
+        not any(a["status"] in ACTIVE for a in state["activations"].values())
+        and not controller.unknown_remote_work(state),
+        "STOP: active, ambiguous or untracked remote work requires reconciliation",
     )
     sources = api.request("GET", f"/api/companies/{company}/jules-sources")
     native.require(
@@ -130,6 +161,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (native.Stop, OSError, ValueError, KeyError) as exc:
+    except (native.Stop, SafetyError, OSError, ValueError, KeyError) as exc:
         print(str(exc))
         raise SystemExit(1)

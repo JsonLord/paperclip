@@ -1,5 +1,8 @@
 # Agency Supervisor v1 qualification
 
+Current continuation: [2026-10-23 live recovery and PASS_LIVE receipts](2026-10-23-admin-pipeline-recovery.md).
+The dated failure/preflight notes below are preserved historical evidence.
+
 2026-10-22. Review branch `codex/agency-supervisor-v1`, based exactly on
 `559a18cd76e42b0242446c2f7464a57f5aa9c967`. Implementation commits include
 `f575d2c` (identity), `313596c` (late completion), `eb70cbb` (terminal bindings and
