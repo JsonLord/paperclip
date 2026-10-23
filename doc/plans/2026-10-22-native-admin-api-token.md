@@ -1,5 +1,10 @@
 # Native admin API token
 
+Live status on 2026-10-23: the focused patch is deployed at HF revision
+`70929365485b47f56e7abfc4eb960c7bb4d2e1dc` and healthy. Admin-token access still
+returns 401; password/admin access and roster preservation pass. See
+[live qualification and exact blocker](2026-10-23-admin-token-live-qualification.md).
+
 Focused branch `codex/native-admin-api-token-v1`, from deployed application source
 `0eba2bb8dce7093b77ccb952f71fea91edee6da8`. This change does not include the
 Agency supervisor application patches, Jules quota changes, Nodepad or migrations.
