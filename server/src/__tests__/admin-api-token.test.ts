@@ -4,7 +4,8 @@ import pino from "pino";
 import { createServer, type Server } from "node:http";
 import { createHash } from "node:crypto";
 import { agentApiKeys, agents, authUsers, instanceUserRoles } from "@paperclipai/db";
-import { resolveAdminApiToken } from "../auth/admin-api-token.js";
+import { resolveAdminApiToken, adminApiTokenStatus } from "../auth/admin-api-token.js";
+import { accessRoutes } from "../routes/access.js";
 import { actorMiddleware } from "../middleware/auth.js";
 import { boardMutationGuard } from "../middleware/board-mutation-guard.js";
 import { HTTP_CREDENTIAL_REDACTION } from "../middleware/logger.js";
@@ -35,6 +36,16 @@ function setup() {
 }
 
 describe("native admin API token", () => {
+  it("reports safe server readiness without returning token material", async () => {
+    const { db } = setup();
+    expect(await adminApiTokenStatus(db)).toMatchObject({ enabled: true, minimumLengthValid: true, independentCredential: true });
+    expect(JSON.stringify(await adminApiTokenStatus(db))).not.toContain(TOKEN);
+    process.env.PAPERCLIP_ADMIN_API_TOKEN = "short";
+    expect(await adminApiTokenStatus(db)).toMatchObject({ enabled: false, minimumLengthValid: false });
+    process.env.PAPERCLIP_ADMIN_API_TOKEN = TOKEN;
+    process.env.BETTER_AUTH_SECRET = TOKEN;
+    expect(await adminApiTokenStatus(db)).toMatchObject({ enabled: false, independentCredential: false });
+  });
   it("redacts bearer credentials and cookies from serialized HTTP logs", () => {
     let output = "";
     const log = pino({ redact: { paths: HTTP_CREDENTIAL_REDACTION, censor: "[REDACTED]" } }, { write: (line) => { output += line; } });
@@ -95,6 +106,7 @@ describe("native admin API token", () => {
     app.post("/api/admin-probe", (req, res) => { assertBoard(req); res.json({ userId: req.actor.userId }); });
     app.get("/api/admin-probe", (req, res) => { assertBoard(req); assertCompanyAccess(req, "company-b"); res.json(req.actor); });
     app.get("/api/companies/:id/probe", (req, res) => { assertCompanyAccess(req, req.params.id); res.json({ type: req.actor.type }); });
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "public", bindHost: "127.0.0.1", allowedHostnames: [] }));
     app.use((err: any, _req: any, res: any, _next: any) => res.status(err.status ?? 500).json({ error: "denied" }));
     server = createServer(app);
     await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
@@ -105,6 +117,8 @@ describe("native admin API token", () => {
     expect(admin.status).toBe(200);
     expect(await admin.json()).toMatchObject({ type: "board", userId: "existing-admin", source: "admin_token", isInstanceAdmin: true });
     expect(resolveSession).not.toHaveBeenCalled();
+    expect((await get("/api/admin/api-token/status", TOKEN)).status).toBe(200);
+    expect((await get("/api/admin/api-token/status", "wrong-token")).status).toBe(401);
     expect((await get("/api/admin-probe", "wrong-token")).status).toBe(403);
     expect((await get("/api/companies/company-a/probe", agentToken)).status).toBe(200);
     expect((await get("/api/companies/company-b/probe", agentToken)).status).toBe(403);
@@ -113,6 +127,8 @@ describe("native admin API token", () => {
     expect(resolveSession).toHaveBeenCalledTimes(1);
     expect((await fetch(base + "/api/admin-probe", { method: "POST", headers: { Authorization: "Bearer " + TOKEN } })).status).toBe(200);
     expect((await fetch(base + "/api/admin-probe", { method: "POST" })).status).toBe(403);
+    rows.set(instanceUserRoles, rows.get(instanceUserRoles)!.filter((row) => row.userId !== "cookie-admin"));
+    expect((await get("/api/admin/api-token/status")).status).toBe(403);
   });
   it("fails closed on a database error without falling back to a cookie identity", async () => {
     setup();

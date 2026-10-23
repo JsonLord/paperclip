@@ -60,6 +60,13 @@ or duplicate email, signing-key/password reuse and invalid credentials grant no
 board access. A failed DB identity lookup fails closed and does not fall back to
 a cookie identity. No mutation retry or token-mint endpoint is introduced.
 
+`GET /api/admin/api-token/status` provides instance-admin-only configuration
+diagnostics using an existing authenticated admin session. It returns booleans for
+presence, minimum length, independence from signing keys/password, bound admin
+identity and malformed-prefix/whitespace warnings. It returns no credential,
+digest, exact length or secret value. A non-admin session and an invalid Bearer
+credential cannot access this diagnostic.
+
 ## Qualification and deployment boundary
 
 Six focused tests cover exact/invalid token, missing/weak/reused configuration,
