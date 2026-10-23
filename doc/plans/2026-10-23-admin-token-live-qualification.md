@@ -1,5 +1,49 @@
 # Admin-token deployment and live qualification
 
+## Current result: exact token configuration failure identified
+
+The diagnostic patch at application source
+`f72900ef4c16d2530cc9d01470cdc9a92c0a0e33` is deployed and healthy at HF revision
+`26bfabb1fd3fe4245f07169f7f564f8199ca12bf`. Full typecheck/build pass; 139 test
+files, 786 tests passed and one skipped. Seven focused auth/status tests pass,
+including rejection of non-admin sessions at the diagnostic endpoint.
+
+An authenticated instance-admin request to `/api/admin/api-token/status` returns:
+
+```json
+{
+  "tokenConfigured": true,
+  "minimumLengthValid": false,
+  "independentCredential": true,
+  "emailConfigured": true,
+  "adminIdentityValid": true,
+  "hasBearerPrefix": false,
+  "containsWhitespace": false,
+  "enabled": false
+}
+```
+
+This was reconfirmed after synchronizing the latest explicitly published client
+credential to the HF secret and restarting the same diagnostic revision. The
+loaded token is **shorter than 32 characters**; the identity/email/independence
+checks pass. The earlier unexplained-mismatch diagnosis below is superseded by
+this direct server evidence. No credential, digest or exact length was exposed.
+
+Required action: replace the secure environment token with a new 64-character
+random value (for example generate locally with `openssl rand -hex 32`), save and
+publish. Do not paste the value in chat. It can then be provisioned to HF through
+the existing API and reloaded; no further code deployment or manual HF edit is
+needed. Preserve previous provisioning intents; a newly published credential is
+a new explicit configuration operation, not permission to replay old writes.
+
+Final live data check at 2026-10-23T17:01:51Z: 48 native agents, 45 canonical IDs,
+37 newly imported specialists paused, zero active runs. No provider rebind, new
+Jules session or new Hermes run occurred. Full pipeline status is
+`BLOCKED_ADMIN_TOKEN_TOO_SHORT`. Local receipts include
+`admin-server-configuration.json` and `admin-final-status.json`.
+
+The remaining sections retain the earlier deployment investigation as history.
+
 Application source: `2b6c978a9e9b4f15a5eb328d88cfcb5c1cf00efa`, branch
 `codex/native-admin-api-token-v1`, based on deployed `0eba2bb`.
 

@@ -1,8 +1,10 @@
 # Native admin API token
 
-Live status on 2026-10-23: the focused patch is deployed at HF revision
-`70929365485b47f56e7abfc4eb960c7bb4d2e1dc` and healthy. Admin-token access still
-returns 401; password/admin access and roster preservation pass. See
+Live status on 2026-10-23: the focused patch and admin-only diagnostics are deployed
+at HF revision `26bfabb1fd3fe4245f07169f7f564f8199ca12bf` and healthy. The diagnostic
+proves that the loaded token is shorter than 32 characters; identity and credential
+independence pass. Admin-token access remains disabled until a longer token is
+provided. Password/admin access and roster preservation pass. See
 [live qualification and exact blocker](2026-10-23-admin-token-live-qualification.md).
 
 Focused branch `codex/native-admin-api-token-v1`, from deployed application source
