@@ -27,10 +27,20 @@ write do not establish that the server accepts the client credential.
 
 The existing native admin identity and email are verified. The remaining token
 configuration/authentication mismatch is not diagnosed conclusively: secret
-transfer, runtime provisioning, minimum length or prohibited reuse can each deny
+transfer, minimum length or prohibited reuse can each deny
 authentication. The secure client credential may be network-proxied; its process
 representation is not proof of the deployed secret's value. No secret was read
 back, guessed, printed or copied into source to diagnose this.
+
+One controlled restart of the same exact revision was completed after verifying
+a fresh backup and zero active native runs. The runtime returned healthy, the
+roster remained unchanged and token authentication still returned 401. Stale
+runtime loading therefore did not explain the failure. Both an invalid Bearer
+header and the configured client Bearer header also return 401 when sent with an
+otherwise valid board cookie; the native bearer path is being selected instead
+of silently falling back to cookie authentication. Backup identity data confirms
+exactly one matching user for the bound email. No further restart, credential
+rewrite or provider mutation is queued pending the secure matching-token correction.
 
 Required operator action: set `PAPERCLIP_ADMIN_API_TOKEN` directly in the HF Space
 Secrets settings to exactly the same new token supplied to the Codex environment,
