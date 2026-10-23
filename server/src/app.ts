@@ -9,6 +9,7 @@ import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
+import { apiDocsRoutes } from "./routes/api-docs.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { firmRoutes } from "./routes/firm.js";
@@ -112,6 +113,7 @@ export async function createApp(
       bindHost: opts.bindHost,
     }),
   );
+  app.use(apiDocsRoutes());
   app.use(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
