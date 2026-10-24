@@ -160,7 +160,10 @@ ${(() => {
   return listed || "No MCP tools declared for this outcome.";
 })()}
 
-Do not add Neon, Supabase, Postgres, or another company-state database. Render Static is only for static sites; services target Hugging Face Spaces.
+Neon and Supabase are for transient, disposable query work only. Company state stays in
+GitHub and \`firm/*.firm\`: never make a Postgres database the source of truth for a
+business fact, and never create one to hold what a Firm file already holds.
+Render Static is only for static sites; services target Hugging Face Spaces.
 
 ## Goal-specific support
 Required reasoning skills: ${spec.support?.skills.length ? spec.support.skills.join(", ") : "None"}.
