@@ -13,6 +13,7 @@ import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { firmRoutes } from "./routes/firm.js";
 import { julesRoutes } from "./routes/jules.js";
+import { supervisorRoutes } from "./routes/supervisor.js";
 import { customerDiscoveryRoutes } from "./routes/customer-discovery.js";
 import { marketIntelligenceRoutes } from "./routes/market-intelligence.js";
 import { offerDemandRoutes } from "./routes/offer-demand.js";
@@ -155,6 +156,7 @@ export async function createApp(
   api.use("/companies", companyRoutes(db));
   api.use("/companies", firmRoutes(db));
   api.use(julesRoutes(db));
+  api.use(supervisorRoutes(db));
   api.use(customerDiscoveryRoutes(db));
   api.use(marketIntelligenceRoutes(db));
   api.use(offerDemandRoutes(db));

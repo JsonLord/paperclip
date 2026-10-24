@@ -71,3 +71,5 @@ export { businessPlans } from "./business_plan.js";
 export { pitchDecks } from "./pitch.js";
 export { publishingAccounts, contentCandidates, socialPublications, contentStrategies, gtmCampaigns, contentAtoms, campaignEvents } from "./content_publishing.js";
 export { crowdfundingCampaigns, crowdfundingEvents } from "./crowdfunding.js";
+
+export { controllerLeases } from "./controller_leases.js";

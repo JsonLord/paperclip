@@ -20,3 +20,5 @@ export { customerDiscoveryRoutes } from "./customer-discovery.js";
 export { marketIntelligenceRoutes } from "./market-intelligence.js";
 
 export { offerDemandRoutes } from "./offer-demand.js";
+
+export { supervisorRoutes } from "./supervisor.js";
