@@ -83,27 +83,6 @@ done < <( cd "$space" && git ls-files -z )
 say "removed $stale stale file(s)"
 find "$space" -depth -type d -empty -not -path "$space/.git/*" -delete 2>/dev/null || true
 
-# The Hub rejects a push that adds a large binary outside LFS, and some Space files
-# (doc/assets/header.png, doc/assets/footer.jpg) are stored as LFS pointers. The
-# mirror above replaced those pointers with the real blobs, which the pre-receive
-# hook declines. Without git-lfs we cannot create new pointers, so restore the ones
-# the Space already has. ls-tree -l gives us the blob sizes, so only the handful of
-# pointer-sized blobs are inspected.
-lfs_kept=0
-while IFS= read -r line; do
-  size="$(printf '%s' "$line" | awk '{print $4}')"
-  path="$(printf '%s' "$line" | cut -f2-)"
-  [ "$size" -le 200 ] 2>/dev/null || continue
-  [ -e "$space/$path" ] || continue
-  blob="$(git -C "$space" cat-file -p "HEAD:$path" 2>/dev/null)" || continue
-  case "$blob" in
-    "version https://git-lfs.github.com/spec/"*)
-      printf '%s\n' "$blob" > "$space/$path"
-      lfs_kept=$((lfs_kept + 1))
-      ;;
-  esac
-done < <( git -C "$space" ls-tree -r -l HEAD )
-[ "$lfs_kept" -gt 0 ] && say "kept $lfs_kept LFS pointer(s) — install git-lfs to update those binaries"
 
 # 4) Restore the Space-only paths.
 for path in "${KEEP[@]}"; do
@@ -158,8 +137,64 @@ done < <( cd "$repo" && git ls-files '*/package.json' 'package.json' )
 [ "$missing" -eq 0 ] || die "add the missing COPY lines to deploy/hf-space/overlay/Dockerfile"
 say "Dockerfile deps stage covers every workspace package"
 
+# The Hub declines any push that adds a binary the repo does not keep in LFS/Xet
+# ("Your push was rejected because it contains binary files"), and the mirror above
+# overwrites the Space's pointers with real bytes, so every image in the tree becomes such
+# an addition at once — seventeen last time, across doc/assets and ui/public. Those images
+# are served at runtime, so deleting them is not an option.
+#
+# This runs last on purpose: the KEEP restore replaces .gitattributes with the Space's own,
+# so tracking patterns registered before it would be silently discarded.
+if command -v git-lfs >/dev/null 2>&1; then
+  ( cd "$space" && git lfs install --local --force >/dev/null 2>&1 )
+  exts="$( cd "$space" && git ls-files |
+      sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z' | sort -u |
+      grep -Ex 'png|jpe?g|gif|webp|ico|woff2?|ttf|eot|pdf|mp4|zip|wasm' )"
+  for ext in $exts; do ( cd "$space" && git lfs track "*$ext" >/dev/null ); done
+  say "tracking in LFS: $(printf '%s ' $exts)"
+else
+  # Without git-lfs we cannot create pointers, so keep the ones the Space already has; any
+  # NEW binary is caught by the gate below rather than discovered at the remote.
+  lfs_kept=0
+  while IFS= read -r line; do
+    size="$(printf '%s' "$line" | awk '{print $4}')"
+    path="$(printf '%s' "$line" | cut -f2-)"
+    [ "$size" -le 200 ] 2>/dev/null || continue
+    [ -e "$space/$path" ] || continue
+    blob="$(git -C "$space" cat-file -p "HEAD:$path" 2>/dev/null)" || continue
+    case "$blob" in
+      "version https://git-lfs.github.com/spec/"*)
+        printf '%s\n' "$blob" > "$space/$path"
+        lfs_kept=$((lfs_kept + 1))
+        ;;
+    esac
+  done < <( git -C "$space" ls-tree -r -l HEAD )
+  [ "$lfs_kept" -gt 0 ] && say "restored $lfs_kept existing LFS pointer(s) — install git-lfs to update those binaries"
+fi
+
 cd "$space"
 git add -A
+# Renormalize against the patterns just registered. Scoped to the tracked extensions
+# because `git add --renormalize .` restages the whole tree, which would hide which files
+# actually changed from the review output below.
+if command -v git-lfs >/dev/null 2>&1 && [ -n "${exts:-}" ]; then
+  for ext in $exts; do
+    git ls-files -z -- "*${ext}" | xargs -0 -r git add --renormalize --
+  done
+fi
+
+# The gate. A staged entry whose numstat is `-` is a blob git considers binary, which is
+# exactly what the pre-receive hook refuses; an LFS pointer is small text and reports line
+# counts instead. Checking the index rather than the working tree matters: with LFS active
+# the checkout legitimately holds real bytes, so a file-on-disk test would flag every
+# correctly tracked image.
+binary_added="$( git diff --cached --numstat HEAD 2>/dev/null | awk '$1 == "-" { print $3 }' )"
+if [ -n "$binary_added" ]; then
+  printf '  would be rejected, not in LFS:\n%s\n' "$binary_added" >&2
+  die "install git-lfs, or list these extensions in the Space's .gitattributes, before syncing"
+fi
+say "no raw binaries staged"
+
 if git diff --cached --quiet; then
   say "Space already up to date"
   exit 0
