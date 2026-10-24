@@ -269,6 +269,7 @@ function renderPeerSection(options: HermesPromptOptions): string {
   if (parked.length) lines.push("", `Not taking work right now: ${parked.map((peer) => `${peer.name} (${peer.note || "unavailable"})`).join(", ")}.`);
   lines.push("");
   lines.push("- One deliverable per issue. Never ask the founder this way, and never ask the agent that asked you: a loop leaves both of you waiting. If it comes back around, report the blocker.");
+  lines.push("- When you finish work someone asked *you* for, comment on your own issue and mention them by name (`@Name`) — that mention is what wakes them. Closing their issue instead skips the step where they check your work.");
   lines.push("- Send `fromIssueId` when you were asked to do something yourself — it is how the server knows you are already inside a chain, and its only way to tell you not to hand the work back.");
   lines.push("- Mid-run, to see who exists and who is paused: `curl -s \"{{paperclipApiUrl}}/companies/{{companyId}}/peers\" -H \"Authorization: Bearer $PAPERCLIP_API_KEY\"`.");
   return lines.join("\n");

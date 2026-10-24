@@ -156,6 +156,19 @@ describe("a handoff that succeeds is an ordinary assigned issue", () => {
     expect(created).not.toBeNull();
   });
 
+  it("wakes the agent that asked when the work comes back", async () => {
+    // A handoff to a Jules worker is a one-way door without this: the peer submits its candidate
+    // and the requester waits for a reply nothing sends. A locally-run assignee closes its own loop
+    // by mentioning the requester; a Jules session has no credential, so the server carries the
+    // news, under a reason distinct from being assigned work of its own.
+    const calls: Array<{ agentId: string; reason: unknown }> = [];
+    const handoff = agentHandoffService(fakeDb([[agents, fleet()], [issues, []]]).db as Db, {
+      wake: async (agentId: string, options: Record<string, unknown>) => { calls.push({ agentId, reason: options.reason }); },
+    });
+    await handoff.wakeRequester({ issueId: "i9", completerAgentId: "a-docs", requesterAgentId: "a-pdf" });
+    expect(calls).toEqual([{ agentId: "a-pdf", reason: "handoff_returned" }]);
+  });
+
 describe("the directory a worker is allowed to ask", () => {
   it("excludes itself, foreign companies, and agents that cannot work", async () => {
     const { handoff } = harness();
@@ -180,9 +193,19 @@ describe("what the peer actually reads", () => {
     expect(body).toContain("Requested by Document Compiler");
     expect(body).toContain("business-case/PLAN.md");
     expect(body).toContain("The PDF opens and paginates");
-    // The return path is a mention, because mentions are what wake the requester.
-    expect(body).toContain("@Document Compiler");
     // Closing the requester's issue would skip the step where they check the work.
     expect(body).toMatch(/Do not close the requester's own issue/);
+  });
+
+  it("tells each assignee how to hand back using a channel it actually has", () => {
+    // A local agent holds a Paperclip credential, so a mention is the return path and names the
+    // requester. A Jules session holds none: instructing it to mention would post nothing and the
+    // requester would never be woken — a silent dead end that reads as being ignored.
+    const local = renderHandoffDescription({ requesterName: "Document Compiler", need: "Render the plan", assigneeAdapterType: "hermes_local" });
+    const remote = renderHandoffDescription({ requesterName: "Document Compiler", need: "Render the plan", assigneeAdapterType: "jules" });
+    expect(local).toContain("mention @Document Compiler");
+    expect(remote).not.toContain("mention @Document Compiler");
+    expect(remote).toMatch(/completion candidate/);
+    expect(remote).toMatch(/routes the result back/);
   });
 });

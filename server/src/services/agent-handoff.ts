@@ -105,8 +105,27 @@ function aliasesOf(agent: { metadata: unknown }): string[] {
     .filter(Boolean);
 }
 
-/** The body a peer reads. Written so it stands alone: the peer never sees the requester's prompt. */
-export function renderHandoffDescription(input: { requesterName: string; need: string; context?: string; inputs?: string[]; acceptance?: string[] }): string {
+/**
+ * The body a peer reads. Written so it stands alone: the peer never sees the requester's prompt.
+ *
+ * The closing instruction differs by how the *assignee* runs, because that decides what it can
+ * physically do, and an instruction it cannot follow is worse than no instruction — it produces a
+ * comment that never posts or a mention that never wakes anyone, both silently.
+ *
+ * A locally-run agent holds a Paperclip credential, so it can mention the requester on its own
+ * issue and that mention is what wakes them. A Jules session holds no credential at all, so its
+ * completion candidate is the hand-back and Paperclip routes the result; telling it to leave a
+ * mention would describe a channel it does not have.
+ */
+export function renderHandoffDescription(input: {
+  requesterName: string;
+  need: string;
+  context?: string;
+  inputs?: string[];
+  acceptance?: string[];
+  assigneeAdapterType?: string;
+}): string {
+  const returnsItself = input.assigneeAdapterType === "hermes_local";
   return [
     `Requested by ${input.requesterName}.`,
     "",
@@ -117,7 +136,10 @@ export function renderHandoffDescription(input: { requesterName: string; need: s
     ...(input.inputs?.length ? ["## Read first", ...input.inputs.map((path) => `- ${path}`), ""] : []),
     ...(input.acceptance?.length ? ["## Done means", ...input.acceptance.map((line) => `- ${line}`), ""] : []),
     "## How to finish",
-    `Comment here and mention @${input.requesterName} so the result comes back. Do not close the requester's own issue — that is theirs to close.`,
+    ...(returnsItself
+      ? [`Comment on this issue and mention @${input.requesterName} when the deliverable exists — that mention is what wakes them to look.`]
+      : ["Submit your completion candidate when the deliverable exists; Paperclip routes the result back to the requester."]),
+    "Do not close the requester's own issue — checking the work is their step, and closing it for them removes it.",
   ].join("\n");
 }
 
@@ -250,7 +272,7 @@ export function agentHandoffService(db: Db, options: AgentHandoffOptions = {}) {
     try {
       created = await issuesFor(database).create(input.companyId, {
         title: input.title.trim().slice(0, 300),
-        description: renderHandoffDescription({ requesterName: requester.name, need: input.need, context: input.context, inputs: input.inputs, acceptance: input.acceptance }),
+        description: renderHandoffDescription({ requesterName: requester.name, need: input.need, context: input.context, inputs: input.inputs, acceptance: input.acceptance, assigneeAdapterType: target.adapterType }),
         // Not `backlog`: a backlog issue does not wake its assignee, and waking is the point.
         status: "todo",
         priority: input.priority ?? "medium",
@@ -290,13 +312,38 @@ export function agentHandoffService(db: Db, options: AgentHandoffOptions = {}) {
    * way it is woken by the board.
    */
   async function wakeAssignee(target: { issueId: string; requesterId: string; targetId: string }) {
+    return wakePeer({ ...target, reason: "issue_assigned" });
+  }
+
+  /**
+   * Wake the agent that asked, because the work it asked for has been reported ready.
+   *
+   * This is the return leg, and without it a handoff to a Jules worker is a one-way door: the peer
+   * finishes, submits its candidate, and the requester keeps waiting for a reply that nothing
+   * ever sends. A locally-run assignee closes its own loop by mentioning the requester in a comment
+   * — it holds a credential. A Jules session holds none, so the server has to carry the news.
+   *
+   * Distinct reason rather than reusing `issue_assigned`: an agent woken to *do* a task and an
+   * agent woken because a task it delegated came back are different situations, and the wake reason
+   * is the only thing its prompt is being told about it.
+   */
+  async function wakeRequester(returned: { issueId: string; completerAgentId: string; requesterAgentId: string }) {
+    return wakePeer({
+      issueId: returned.issueId,
+      requesterId: returned.completerAgentId,
+      targetId: returned.requesterAgentId,
+      reason: "handoff_returned",
+    });
+  }
+
+  async function wakePeer(target: { issueId: string; requesterId: string; targetId: string; reason: string }) {
     let woke = false;
     let wakeError: string | undefined;
     try {
       await wakeFn(target.targetId, {
         source: "assignment",
         triggerDetail: "system",
-        reason: "issue_assigned",
+        reason: target.reason,
         payload: { issueId: target.issueId, mutation: "create", handoffFromAgentId: target.requesterId },
         requestedByActorType: "agent",
         requestedByActorId: target.requesterId,
@@ -321,5 +368,5 @@ export function agentHandoffService(db: Db, options: AgentHandoffOptions = {}) {
     return row ?? null;
   }
 
-  return { resolveRole, requestChain, requestHandoff, wakeAssignee, peerDirectory, handoffState };
+  return { resolveRole, requestChain, requestHandoff, wakeAssignee, wakeRequester, peerDirectory, handoffState };
 }

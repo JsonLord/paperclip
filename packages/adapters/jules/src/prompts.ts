@@ -330,7 +330,11 @@ function renderHandoffSection(spec: JulesSessionSpec): string {
   lines.push("- One deliverable per request file. Two asks in one issue means half of it gets done and reported as the whole thing.");
   lines.push("- `eventId` must be unique per request and stable if you rewrite the file: it is what stops a duplicate ask. Reuse it only for the same ask.");
   lines.push("- Do not ask the founder, and do not ask the agent that asked you — a loop leaves both of you waiting. If the chain comes back around, report the blocker.");
-  lines.push("- When you finish work someone asked you for, comment on *your* issue and mention the requester. Closing their issue for them removes the step where they check it.");
+  // No "mention the requester when done" here, unlike the local-agent version of this section: a
+  // Jules session has no Paperclip credential, so a mention it wrote would never post and the
+  // requester would never be woken — a silent dead end that reads as the peer having ignored the
+  // request. The completion candidate is the hand-back, and Paperclip routes the result.
+  lines.push("- When it is done, submit your completion candidate as usual — that is what returns the work to whoever asked. Do not close their issue: checking the deliverable is their step.");
   lines.push("");
   return lines.join("\n") + "\n\n";
 }

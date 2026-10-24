@@ -66,7 +66,7 @@ export function julesCallbackService(db: Db, hooks: JulesCallbackPromotionHooks 
     // A holder object rather than a `let`: TypeScript does not track an assignment made inside the
     // transaction callback, so a plain variable is still `null` at the call site and narrows to
     // `never` in the guard below.
-    const pendingWake: { run: (() => Promise<unknown>) | null } = { run: null };
+    const pendingWakes: Array<() => Promise<unknown>> = [];
     const result = await db.transaction(async (tx) => {
       const inserted = await tx.insert(julesCallbackEvents).values({ companyId: session.companyId, sessionId: session.id, eventId, eventType: type, payload }).onConflictDoNothing().returning();
       if (!inserted[0]) return { applied: false, duplicate: true };
@@ -128,7 +128,7 @@ export function julesCallbackService(db: Db, hooks: JulesCallbackPromotionHooks 
         // before the commit lets the peer be roused for an issue that does not exist yet.
         }, { database: tx as unknown as Db, deferWake: true });
         if (handoff.ok && handoff.wakePending) {
-          pendingWake.run = () => handoffSvc.wakeAssignee({ issueId: handoff.issueId, requesterId: session.agentId, targetId: handoff.assignee.id });
+          pendingWakes.push(() => handoffSvc.wakeAssignee({ issueId: handoff.issueId, requesterId: session.agentId, targetId: handoff.assignee.id }));
         }
         // Refusals are recorded and swallowed rather than thrown: the outbox reconciler treats a
         // thrown promote as "retry later", and an ambiguous or circular ask will fail the same
@@ -149,14 +149,37 @@ export function julesCallbackService(db: Db, hooks: JulesCallbackPromotionHooks 
         const submitted = record(payload.pullRequest);
         await tx.update(julesSessions).set({ status: "COMPLETED_UNVALIDATED", completionCandidate: true, pullRequestUrl: text(submitted.url) ?? text(payload.pullRequestUrl) ?? session.pullRequestUrl, pullRequestTitle: text(submitted.title) ?? session.pullRequestTitle, pullRequestDescription: text(submitted.description) ?? session.pullRequestDescription, resultJson: payload, finishedAt: session.finishedAt ?? now, updatedAt: now }).where(and(eq(julesSessions.id, session.id), eq(julesSessions.companyId, session.companyId)));
         await activity("jules.completion_candidate.submitted", { eventId, sessionId: session.julesSessionId, issueId: session.issueId });
+        // The return leg of a handoff. When this issue was created by another agent asking for
+        // part of its job, that agent is waiting on a reply nothing else sends: a locally-run
+        // assignee would have mentioned the requester itself, but a Jules session holds no
+        // Paperclip credential and cannot. Waking the requester here is what stops a handoff from
+        // being a one-way door.
+        if (session.issueId) {
+          const [origin] = await tx
+            .select({ createdByAgentId: issues.createdByAgentId, requestDepth: issues.requestDepth })
+            .from(issues)
+            .where(and(eq(issues.id, session.issueId), eq(issues.companyId, session.companyId)))
+            .limit(1);
+          // `requestDepth > 0` is what marks an issue as asked-for-rather-than-assigned, and it is
+          // load-bearing: ordinary work is created by the Founder Manager, so returning on every
+          // completion would start a full manager run each time any worker finished anything —
+          // twenty-one agents' worth of runs nobody asked for. Only a handoff came from a peer.
+          const asker = (origin?.requestDepth ?? 0) > 0 ? origin?.createdByAgentId : null;
+          if (asker && asker !== session.agentId) {
+            const { agentHandoffService } = await import("./agent-handoff.js");
+            const handoffSvc = agentHandoffService(db);
+            pendingWakes.push(() => handoffSvc.wakeRequester({ issueId: session.issueId!, completerAgentId: session.agentId, requesterAgentId: asker }));
+            await activity("jules.handoff.returned", { eventId, toAgentId: asker, issueId: session.issueId, sessionId: session.julesSessionId });
+          }
+        }
       }
       return { applied: true, duplicate: false };
     });
     // Past the commit, so the issue the peer is being woken for is really there. A failed wake is
     // logged rather than thrown: the issue is durable and visible on the board, and re-throwing
     // would make the reconciler treat a delivered event as undelivered and re-promote it.
-    if (pendingWake.run) {
-      try { await pendingWake.run(); } catch (error) { logger.warn({ err: error, eventId }, "handoff was created but its assignee could not be woken; the issue stays on the board waiting for a heartbeat"); }
+    for (const wake of pendingWakes) {
+      try { await wake(); } catch (error) { logger.warn({ err: error, eventId }, "a handoff wake was lost; the issue stays on the board and its assignee is reached by the next heartbeat"); }
     }
     if (result.applied) await hooks[hookByType[type]]?.({ eventId, type, sessionId: session.id, companyId: session.companyId, runId: session.paperclipRunId, issueId: session.issueId, ...(handoffOutcome ? { handoff: handoffOutcome } : {}) } as never);
     return result;
