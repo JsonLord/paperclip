@@ -226,6 +226,15 @@ build_companies() {
       "select coalesce(json_agg(s order by s.started_at desc),'[]') from (select js.id, a.name as agent, js.jules_session_id, js.status, js.issue_id, js.pull_request_url, js.wait_reason, js.reconciliation_error, js.result_json, js.started_at, js.finished_at from jules_sessions js left join agents a on a.id=js.agent_id where js.company_id='$cid' order by js.started_at desc limit 100) s"
     company_json "$d/diagnostics/jules-capacity.json" \
       "select coalesce(json_agg(c order by c.occurred_at desc),'[]') from (select id, profile_id, session_id, event_type, details, occurred_at from jules_capacity_events where company_id='$cid' order by occurred_at desc limit 200) c"
+    # WP5: durable dispatch/run correlation. The restore dump deliberately drops
+    # heartbeat_runs data, so after a container restart the runs referenced by
+    # dispatch_intents (restored in full) no longer exist in the database. This
+    # bounded join keeps exactly the run rows campaign recovery needs to resolve
+    # DISPATCHED/UNKNOWN outcomes against provider evidence instead of blindly
+    # re-waking: every run a dispatch intent points at, plus whatever is still
+    # queued or running at backup time.
+    company_json "$d/diagnostics/dispatch-correlation.json" \
+      "select coalesce(json_agg(r order by r.started_at desc),'[]') from (select h.id, h.agent_id, h.status, h.error_code, h.error, h.session_id_before, h.session_id_after, h.started_at, h.finished_at, h.context_snapshot from heartbeat_runs h where h.company_id='$cid' and (h.id in (select run_id from dispatch_intents where company_id='$cid' and run_id is not null) or h.status in ('queued','running')) order by h.started_at desc limit 200) r"
   done < <(psql "$DATABASE_URL" -tAF'|' -c "select id, name from companies" 2>/dev/null)
   log "companies: per-company export done"
 }
