@@ -1,104 +1,78 @@
-# MCP Server to Agent Mapping
+# MCP servers, agents, and resource folders
 
-## Jules Agents (Remote - MCP via capabilities)
+One registry describes every MCP server. Three surfaces read from it, so they cannot disagree:
 
-| MCP Server | Agents Using It | Capability Key | Prompt Reference |
-|------------|-----------------|----------------|------------------|
-| **Context7** | Market Analyst, Evidence Steward | `context7` | "API documentation lookup — always consult before coding" |
-| **Linear** | Founder Manager (via hermes), Commitment Analyst | `linear` | "Issue/project tracking — use for structured work tracking" |
-| **Tinybird** | Market Analyst, Channel Experimenter, Retention Analyst | `tinybird` | "Real-time analytics — query dashboards for evidence" |
-| **v0 by Vercel** | Growth Experimenter (fake-door) | `stitch` | "UI generation — for fake-door frontend code" |
-| **Neon** | (Not assigned - available if needed) | `neon` | "Serverless Postgres — only for transient query results" |
-| **Supabase** | (Not assigned - available if needed) | `supabase` | "Serverless Postgres — only for transient query results" |
+| Surface | What it renders | Source |
+| --- | --- | --- |
+| Jules dispatch prompt | Only the servers that agent holds, plus its guide path | `MCP_SERVERS` + agent `capabilities` |
+| Hermes manager prompt | Every server, so the manager can route by capability | `MCP_SERVERS` |
+| `.paperclip/resources/<role>/MCP-GUIDE.md` | Full procedure and limits for that role's servers | `MCP_SERVERS` + workforce catalog |
 
-## Hermes Agent (Local - MCP via prompt)
+**Add a server in one place:** `packages/adapters/jules/src/prompts.ts` → `MCP_SERVERS`.
+**Grant it to a role in one place:** `server/src/services/founderos-deployment-catalog.ts` → that role's `mcp` array.
 
-| MCP Server | Agent | Usage in Prompt |
-|------------|-------|-----------------|
-| **Context7** | Founder Manager | "always consult before coding against a library" |
-| **Linear** | Founder Manager | "use for structured work tracking and decomposition" |
-| **Tinybird** | Founder Manager | "query dashboards for evidence and metrics" |
-| **v0 by Vercel** | Founder Manager | "use for fake-door frontend code and landing pages" |
-| **Neon** | Founder Manager | "only for transient query results, never company state" |
-| **Supabase** | Founder Manager | "only for transient query results, never company state" |
+## The servers
 
-## Outcome Template → Capability Mapping
+| Server | Capability token | For | Not for |
+| --- | --- | --- | --- |
+| Stitch | `stitch` | Design generation for offer surfaces: landing pages, pricing screens, visual direction | Shipped code; a render is not a delivered page |
+| v0 by Vercel | `v0` | React/Tailwind implementation of an approved design under `website/` | Auth, payments, persistence that imply a product we lack |
+| Context7 | `context7` | Version-specific library docs and examples | Market evidence — it says how a library behaves, not whether anyone wants the product |
+| Linear | `linear` | Issue tracking, detailed decomposition behind an outcome | Company state; a business fact that survives lives in `firm/` |
+| Tinybird | `tinybird` | Real-time analytics over experiment traffic | Treating traffic as demand, or a click as commitment |
+| Neon | `neon` | Disposable Postgres branches for transient experiment data | Source of truth for a business fact |
+| Supabase | `supabase` | Postgres + one Edge Function for a capture endpoint | Application infrastructure; deploying it needs approval |
 
-| Outcome Template | Capabilities Declared | MCP Servers Used |
-|------------------|----------------------|------------------|
-| `market_research` | `context7` | Context7 |
-| `channel_test` | `tinybird` | Tinybird |
-| `fake_door` | `stitch`, `tinybird` | v0, Tinybird |
-| `commitment` | `linear` | Linear |
-| `concierge` | `linear` | Linear |
-| `retention` | `tinybird` | Tinybird |
-| All others | none | None declared |
+Stitch and v0 are **different servers doing adjacent halves of one job** — Stitch designs, v0 implements. They were conflated once, which sent agents to v0 for design work and produced code for a layout nobody had settled. `fake_door` declares both because the test needs a design first and code second.
 
-## Implementation Details
+`stitch` is the token; the product is called Stitch. The token predates this doc and is stored on live Jules profiles, goals, and outcome templates, so renaming it would break existing grants. Only the prose changed.
 
-### 1. Jules Prompts (dynamic capability-based)
-**File**: `packages/adapters/jules/src/prompts.ts`
+## Grants by role
 
-The "Tools and deployment" section now dynamically renders available MCP servers based on the outcome template's declared capabilities:
+| Role | Key | Servers | Resource folder |
+| --- | --- | --- | --- |
+| Founder Manager | *(hermes)* | all, for routing | — |
+| Evidence Steward | `evidence` | `context7` | `.paperclip/resources/evidence/` |
+| Market Analyst | `market` | `context7` | `.paperclip/resources/market/` |
+| Future Researcher | `researcher` | `context7`, `tinybird` | `.paperclip/resources/researcher/` |
+| Customer Researcher | `customer` | `linear` | `.paperclip/resources/customer/` |
+| Growth Experimenter | `experiment` | `stitch`, `v0`, `tinybird`, `supabase` | `.paperclip/resources/experiment/` |
+| Commercial Lead | `sales` | `linear` | `.paperclip/resources/sales/` |
+| Product Lead | `product` | `tinybird`, `linear`, `neon` | `.paperclip/resources/product/` |
+| Product Engineer | `engineering` | `context7`, `v0`, `neon`, `supabase` | `.paperclip/resources/engineering/` |
+| Finance Lead | `finance` | `tinybird`, `neon` | `.paperclip/resources/finance/` |
+| Business Case Architect | `business` | `context7`, `stitch`, `linear` | `.paperclip/resources/business/` |
+| Content & GTM Lead | `content` | `stitch`, `v0`, `tinybird` | `.paperclip/resources/content/` |
 
-```typescript
-const mcpMap: Record<string, { name: string; use: string }> = {
-  context7: { name: "Context7", use: "API documentation lookup — always consult before coding" },
-  linear: { name: "Linear", use: "Issue/project tracking — use for structured work tracking" },
-  tinybird: { name: "Tinybird", use: "Real-time analytics — query dashboards for evidence" },
-  stitch: { name: "v0 by Vercel", use: "UI generation — for fake-door frontend code" },
-  neon: { name: "Neon", use: "Serverless Postgres — only for transient query results" },
-  supabase: { name: "Supabase", use: "Serverless Postgres — only for transient query results" },
-};
-```
+## Resource folders
 
-### 2. Hermes Prompt (static reference)
-**File**: `server/src/services/hermes-prompt.ts`
-
-Added "Available MCP Tools" section after authentication explanation, listing all available servers with usage guidance.
-
----
-
-## Agent Resource Folder Paths
-
-Each agent has a dedicated resource folder for business documents:
-
-| Agent Key | Resource Folder Path | Purpose |
-|-----------|---------------------|---------|
-| `evidence` | `.paperclip/resources/evidence/` | Evidence discipline docs |
-| `market` | `.paperclip/resources/market/` | Market analysis templates |
-| `researcher` | `.paperclip/resources/researcher/` | Long-form research reports |
-| `customer` | `.paperclip/resources/customer/` | Customer discovery docs |
-| `experiment` | `.paperclip/resources/experiment/` | Experiment templates |
-| `sales` | `.paperclip/resources/sales/` | Sales/commercial docs |
-| `product` | `.paperclip/resources/product/` | Product strategy docs |
-| `engineering` | `.paperclip/resources/engineering/` | Technical docs |
-| `finance` | `.paperclip/resources/finance/` | Financial planning docs |
-| `business` | `.paperclip/resources/business/` | **Business Model Canvas, Pitch Deck, Business Plan** |
-| `content` | `.paperclip/resources/content/` | GTM content templates |
-
----
-
-## Recommended Document Structure
+Written into the **company repository** at bootstrap by `server/src/services/agent-resources.ts`:
 
 ```
-.paperclip/resources/business/
-├── business-model-canvas-template.md
-├── pitch-deck-outline.md
-├── business-plan-template.md
-└── financial-model-template.md
-
-.paperclip/resources/market/
-├── competitor-analysis-template.md
-├── icp-template.md
-└── market-size-calculation.md
-
-.paperclip/resources/customer/
-├── customer-interview-guide.md
-└── problem-statement-template.md
-
-.paperclip/resources/experiment/
-├── fake-door-template.md
-├── channel-test-template.md
-└── conversion-tracking.md
+.paperclip/resources/
+├── README.md                 # index of every role's folder
+└── <role>/
+    ├── MCP-GUIDE.md          # generated: servers, procedure, limits, owned goals
+    └── templates/            # yours: founder-supplied format and layout guidance
 ```
+
+Guides are generated, so editing one by hand is lost on the next bootstrap — edit the catalog.
+
+### Where to put your documents
+
+Put them in `templates/`, **in the company repository**, not this one:
+
+- Business Model Canvas, business plan, pitch structure → `business/templates/`
+- Long-form research format and depth bar → `researcher/templates/`
+- Fake-door and experiment design conventions → `experiment/templates/`
+- Metric definitions and decision thresholds → `product/templates/`, `finance/templates/`
+
+Keep them to method, format, and layout. **Example claims, traction figures, or business data written into a template get copied onward as though they were fact** — the evidence-discipline rules exist because workers pattern-match on whatever shape they are given.
+
+An empty `templates/` folder is a valid state. The prompt tells the agent to say the folder is empty and work from the goal contract, rather than inventing a format and presenting it as the company's.
+
+## Capability vs requirement
+
+A grant is an **advisory capability, not a hard requirement**. The capacity broker treats a template's capability list as advisory and the prompt says so explicitly: an earlier build that treated it as a requirement denied dispatches over tooling the outcome never needed. Only an operator-set goal requirement or an explicit session spec gates admission.
+
+Consequence: naming `neon` in a prompt does not hand the agent a Neon connection. That comes from `JULES_PROFILE_CAPABILITIES` on the Jules profile. A server in a prompt that the profile does not carry is decoration — harmless, but the agent will report it unavailable.

@@ -11,6 +11,30 @@
  * PAPERCLIP_API_KEY and PAPERCLIP_RUN_ID are read from the environment at run time and
  * must stay as shell variables so no token is ever written into the prompt.
  */
+import { MCP_SERVERS } from "@paperclipai/adapter-jules";
+
+/**
+ * The manager's MCP section, generated from the same registry the Jules dispatch prompt and
+ * each agent's resource folder are built from.
+ *
+ * The Founder Manager is shown every server because it routes work between roles and needs
+ * to know which capability exists before it assigns an outcome; the workers each see only
+ * what they were granted. Guidance stays identical across all three surfaces because there
+ * is one source, so reassigning a server is a catalog edit rather than a documentation hunt.
+ */
+function renderMcpSection(): string {
+  const lines = ["The following MCP servers are configured for this deployment. A server is a capability you may call on, not a step you must perform:"];
+  lines.push("");
+  for (const [capability, guide] of Object.entries(MCP_SERVERS)) {
+    lines.push(`- **${guide.name}** (\`${capability}\`): ${guide.use}.`);
+    lines.push(`  Relevant goals: ${guide.goals.map((goal) => `\`${goal}\``).join(", ")}.`);
+    lines.push(`  Limits: ${guide.cautions[0]}`);
+  }
+  lines.push("");
+  lines.push("Assign an outcome to the role that holds the capability it needs. Never make a server the source of truth for a business fact: company state stays in GitHub and `firm/*.firm`.");
+  return lines.join("\n");
+}
+
 export const HERMES_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent employee in a Paperclip-managed company.
 
 IMPORTANT: Use the \`terminal\` tool with \`curl\` for ALL Paperclip API calls (web_extract and browser cannot reach localhost).
@@ -29,16 +53,8 @@ and every request that MODIFIES an issue also sends:
 Nothing blocks these commands. Run them. A 401 means the header was missing or
 misspelled, not that you lack permission and not that a policy stopped you.
 
-## Available MCP Tools
-The following MCP servers are available. Use them when their capabilities match your task:
-- **Context7** — API documentation lookup; always consult before coding against a library
-- **Linear** — Issue/project tracking; use for structured work tracking and decomposition
-- **Tinybird** — Real-time analytics; query dashboards for evidence and metrics
-- **v0 by Vercel** — UI generation; use for fake-door frontend code and landing pages
-- **Neon** — Serverless Postgres; only for transient query results, never company state
-- **Supabase** — Serverless Postgres; only for transient query results, never company state
-
-Do NOT add Postgres, another company-state database, or persistent data stores beyond what is declared above.
+## Available MCP servers
+${renderMcpSection()}
 
 Your Paperclip identity:
   Agent ID: {{agentId}}

@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, agents, companies, companyJulesSources, companyRepositoryBindings, founderosBootstraps, goals, goalTemplateInstances, issues, projectGoals, projects, resourcePackSnapshots } from "@paperclipai/db";
-import { founderOsDeploymentGoalTemplates, founderOsWorkforce, validateDeploymentCatalog } from "./founderos-deployment-catalog.js";
+import { founderOsDeploymentGoalTemplates, founderOsWorkforce, validateDeploymentCatalog, type WorkforceMember } from "./founderos-deployment-catalog.js";
+import { createResourceFoldersForWorkforce, WORKER_RESOURCE_ROOT } from "./agent-resources.js";
 
 export const FOUNDEROS_CONTEXT_VERSION = "founderos-context/v1";
 export const FOUNDEROS_CONTENT_SOURCE = "JsonLord/FounderOS-DEMO";
@@ -15,51 +16,6 @@ export interface FounderOsBootstrapOptions { contentSource?: string; contentComm
 
 const firmConcepts = ["hypothesis","claim","evidence","experiment","customer_segment","problem","job_to_be_done","offer","value_proposition","competitor","market_estimate","assumption","decision","metric","validation_gate","account","lead","contact","interaction","opportunity","channel"];
 export function founderOsBootstrapFiles(sourceCommit: string): Record<string, string> {
-   const header = `# FounderOS managed context\nversion: ${FOUNDEROS_CONTEXT_VERSION}\nsource: ${FOUNDEROS_CONTENT_SOURCE}\nsource_commit: ${sourceCommit}\n`;
-   const schema = (group: string, concepts: string[]) => `# FounderOS Firm schema ${group} v1\n${concepts.map((name) => `entity ${name} { id: string; status: string; source_ids: string[] }`).join("\n")}\n`;
-   const files: Record<string,string> = {
-@@
--  return files;
--}
--
--export function missingBootstrapFiles(paths: string[], sourceCommit: string) { const present = new Set(paths); return Object.fromEntries(Object.entries(founderOsBootstrapFiles(sourceCommit)).filter(([path]) => !present.has(path))); }
-+  return files;
-+}
-+
-+/**
-+ * Create placeholder resource folders for each worker in the workforce.
-+ *
-+ * These folders are placed under `.paperclip/resources/{worker-key}/` inside the
-+ * company repository. They are intended to hold artefacts such as the Business‑Model
-+ * Canvas, pitch documents and other validation deliverables that each Jules worker
-+ * will generate during the validation programme.
-+ *
-+ * The function returns a map of file paths to empty string contents, which can be
-+ * merged into the bootstrap file set. Adding a `.gitkeep` file ensures the folder
-+ * exists in Git even when it otherwise contains no files.
-+ */
-+export function createResourceFoldersForWorkforce(workforce: readonly { key: string }[]): Record<string, string> {
-+  const files: Record<string, string> = {};
-+  for (const worker of workforce) {
-+    const placeholderPath = `.paperclip/resources/${worker.key}/.gitkeep`;
-+    files[placeholderPath] = "";
-+  }
-+  return files;
-+}
-+
-+/**
-+ * Return the set of bootstrap files that are missing from the repository.
-+ * This includes the core FounderOS files as well as placeholder resource
-+ * folders for each worker in the workforce.
-+ */
-+export function missingBootstrapFiles(paths: string[], sourceCommit: string) {
-+  const present = new Set(paths);
-+  const coreFiles = founderOsBootstrapFiles(sourceCommit);
-+  const resourceFiles = createResourceFoldersForWorkforce(founderOsWorkforce);
-+  const allFiles = { ...coreFiles, ...resourceFiles };
-+  return Object.fromEntries(Object.entries(allFiles).filter(([path]) => !present.has(path)));
-+}
-*** End Patch
   const header = `# FounderOS managed context\nversion: ${FOUNDEROS_CONTEXT_VERSION}\nsource: ${FOUNDEROS_CONTENT_SOURCE}\nsource_commit: ${sourceCommit}\n`;
   const schema = (group: string, concepts: string[]) => `# FounderOS Firm schema ${group} v1\n${concepts.map((name) => `entity ${name} { id: string; status: string; source_ids: string[] }`).join("\n")}\n`;
   const files: Record<string,string> = {
@@ -79,7 +35,16 @@ export function founderOsBootstrapFiles(sourceCommit: string): Record<string, st
   for (const path of ["company","strategy","market","customers","leads","interactions","opportunities","experiments","evidence","decisions"]) files[`firm/${path}.firm`] = `# ${path}: intentionally empty until supported by source evidence\n`;
   return files;
 }
-export function missingBootstrapFiles(paths: string[], sourceCommit: string) { const present = new Set(paths); return Object.fromEntries(Object.entries(founderOsBootstrapFiles(sourceCommit)).filter(([path]) => !present.has(path))); }
+/**
+ * Bootstrap files the repository does not yet have: the managed FounderOS context plus
+ * every role's resource folder. Resource folders are listed here so an instance that
+ * predates them gains them on the next import instead of staying short forever.
+ */
+export function missingBootstrapFiles(paths: string[], sourceCommit: string) {
+  const present = new Set(paths);
+  const allFiles = { ...founderOsBootstrapFiles(sourceCommit), ...createResourceFoldersForWorkforce(founderOsWorkforce) };
+  return Object.fromEntries(Object.entries(allFiles).filter(([path]) => !present.has(path)));
+}
 
 export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOptions) {
   async function bootstrap(companyId: string, repo: CompanyRepositoryInspection) {
@@ -99,9 +64,15 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
       const catalog = validateDeploymentCatalog();
       if (!catalog.valid) throw new Error(`FounderOS deployment catalog is invalid: ${catalog.errors.join("; ")}`);
       const [manager] = await tx.insert(agents).values({ companyId, name: "Founder Manager", role: "ceo", title: "FounderOS Founder Manager", adapterType: "hermes_local", adapterConfig: { model: process.env.FOUNDER_MANAGER_MODEL ?? "alias-large", timeoutSec: Number(process.env.FOUNDER_MANAGER_TIMEOUT_SEC ?? 900) }, status: "idle", capabilities: "result judgment, governance, prioritization", metadata: { founderosTemplateId: "founder-manager", contextVersion: FOUNDEROS_CONTEXT_VERSION } }).returning();
-      const workers = await tx.insert(agents).values(founderOsWorkforce.map((worker) => ({ companyId, name:worker.name, role:"general", title:worker.title, reportsTo:manager.id, adapterType:"jules", adapterConfig:{repository:repo.repository,source:source.accessible?source.source:"",startingBranch:repo.defaultBranch,outcomeTemplate:"bootstrap",autoApprovePlan:true}, status:source.accessible?"idle":"paused", pauseReason:source.accessible?null:JULES_SOURCE_PAUSE_REASON, capabilities:"firm, github, playwright, context7, linear", metadata:{ founderosTemplateId:[worker.key,...worker.roleAliases].join(","), contextVersion:FOUNDEROS_CONTEXT_VERSION, deploymentReady:source.accessible } }))).returning();
+      const workers = await tx.insert(agents).values(founderOsWorkforce.map((worker) => ({ companyId, name:worker.name, role:"general", title:worker.title, reportsTo:manager.id, adapterType:"jules", adapterConfig:{repository:repo.repository,source:source.accessible?source.source:"",startingBranch:repo.defaultBranch,outcomeTemplate:"bootstrap",autoApprovePlan:true,resourcePath:`${WORKER_RESOURCE_ROOT}/${worker.key}`}, status:source.accessible?"idle":"paused", pauseReason:source.accessible?null:JULES_SOURCE_PAUSE_REASON, capabilities:"firm, github, playwright, context7, linear", metadata:{ founderosTemplateId:[worker.key,...worker.roleAliases].join(","), contextVersion:FOUNDEROS_CONTEXT_VERSION, deploymentReady:source.accessible } }))).returning();
       const [vision] = await tx.insert(goals).values({ companyId, title:`Vision — Validate and establish a viable business around ${company.name}`, description:"Establish viability through source-backed evidence; no traction, customer, revenue, or market proof is assumed.", level:"company", status:"active", ownerAgentId:manager.id }).returning();
-      const ownerFor = (role: string) => workers.find((worker) => String((worker.metadata as Record<string, unknown>)?.founderosTemplateId ?? "").includes(role)) ?? workers[0]!;
+      // Match a whole alias, not a substring. founderosTemplateId is the comma-joined
+      // "key,alias,alias" string, and substring matching lets a later alias swallow an
+      // earlier role: with a `researcher` worker present, `"researcher,...".includes("research")`
+      // matched it and silently took `validate-value-realization` away from the Customer
+      // Researcher, whose alias actually is `research`. Every role a goal asks for today is
+      // an exact alias, so this changes no existing assignment.
+      const ownerFor = (role: string) => workers.find((worker) => String((worker.metadata as Record<string, unknown>)?.founderosTemplateId ?? "").split(",").includes(role)) ?? workers[0]!;
       const children = await tx.insert(goals).values(founderOsDeploymentGoalTemplates.map((template) => ({ companyId, title:template.title, description:template.objective, parentId:vision.id, level:"objective", status:template.id==="validate-problem"?"active":"planned", ownerAgentId:ownerFor(template.recommendedOwnerRole).id, requiredSkills:template.requiredSkills, supportPacks:template.supportPacks, requiredCapabilities:template.requiredCapabilities, inputPaths:template.inputPaths, outputPaths:template.outputPaths, acceptanceCriteria:template.acceptanceCriteria, cannotCompleteIf:template.cannotCompleteIf }))).returning();
       await tx.insert(goalTemplateInstances).values(children.map((goal, index) => { const template=founderOsDeploymentGoalTemplates[index]!; return {companyId,goalId:goal.id,parentGoalId:vision.id,templateId:template.id,templateVersion:template.version,systemId:template.system,sourceRepository:options.contentSource??FOUNDEROS_CONTENT_SOURCE,sourceCommit:options.contentCommit,contractSnapshot:template as unknown as Record<string,unknown>}; })).onConflictDoNothing();
       const initialGoal = children[founderOsDeploymentGoalTemplates.findIndex((template) => template.id === "validate-problem")]!;

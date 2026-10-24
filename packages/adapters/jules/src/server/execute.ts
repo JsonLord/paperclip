@@ -59,7 +59,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     linear: { mode: "NONE" },
     objective: asString(ctx.config.objective, outcomeTemplate.objective), inputs: unique(Array.isArray(ctx.config.inputs) ? ctx.config.inputs.filter((item): item is string => typeof item === "string") : [], supportStrings("inputPaths")),
     requiredOutputs: unique([...outcomeTemplate.requiredOutputs], supportStrings("outputPaths")), acceptanceCriteria: unique([...outcomeTemplate.acceptanceCriteria], supportStrings("acceptanceCriteria")), cannotCompleteIf: unique([...outcomeTemplate.cannotCompleteIf], supportStrings("cannotCompleteIf")),
-    externalActions: "APPROVAL_REQUIRED", assignment, managerNotes: asString(ctx.config.managerNotes, ""),
+    externalActions: "APPROVAL_REQUIRED", assignment, managerNotes: asString(ctx.config.managerNotes, ""), resourcePath: asString(ctx.config.resourcePath, "").trim() || undefined,
     support: {
       skills: supportStrings("skills"),
       packs: supportPacks,

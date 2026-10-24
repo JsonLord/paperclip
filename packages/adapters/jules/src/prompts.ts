@@ -1,5 +1,144 @@
 export const JULES_PROMPT_VERSION = "founderos.jules-session/v1" as const;
 
+/**
+ * Default home of per-role reference material.
+ *
+ * Exported for the bootstrap writer, which owns the path the agent is told to read. The prompt
+ * deliberately does not fall back to it: an agent that was never given a resource path gets
+ * no pointer rather than a pointer at a folder nobody wrote.
+ */
+export const DEFAULT_RESOURCE_ROOT = ".paperclip/resources";
+
+/**
+ * The MCP servers a FounderOS deployment knows about, keyed by the capability token
+ * used in outcome templates, goal `requiredCapabilities`, and Jules profile grants.
+ *
+ * The key is the contract; `name` is only how the server is addressed in prose. They
+ * deliberately differ for `stitch`, which is the token every existing profile, goal and
+ * template already carries, while the product is called Stitch.
+ *
+ * Stitch and v0 are different products solving different halves of the same job, and an
+ * agent that conflates them will reach for the wrong one:
+ *   - Stitch (Google) produces design artifacts — screens, layouts, visual direction.
+ *   - v0 (Vercel) produces shippable React/Tailwind code that goes in `website/`.
+ * A fake-door test needs a design first and code second, so `fake_door` declares both.
+ */
+export interface McpServerGuide {
+  name: string;
+  /** One-line statement of when to reach for it, rendered into the dispatch prompt. */
+  use: string;
+  /** Goals this server materially advances, for the agent's own resource doc. */
+  goals: string[];
+  /** Concrete procedure, written to the resource doc rather than every prompt. */
+  howTo: string[];
+  /** Limits that stop the agent reaching for it too early. */
+  cautions: string[];
+}
+
+export const MCP_SERVERS: Record<string, McpServerGuide> = {
+  stitch: {
+    name: "Stitch",
+    use: "design generation for offer surfaces — landing pages, pricing screens, and the visual direction of a fake-door test",
+    goals: ["validate-offer", "validate-demand", "compile-pitch", "content-distribution", "kickstarter-crowdfunding"],
+    howTo: [
+      "Prompt for the decision the page has to support, not for \"a nice landing page\": name the ICP, the promised outcome, and the single action the visitor should take.",
+      "Ask for the variants you intend to test against each other, so the design and the experiment share a shape.",
+      "Take the design forward to v0 for implementation instead of hand-coding a layout the design already settled.",
+      "Record which design produced which variant under `experiments/`, and cite it when reporting results.",
+    ],
+    cautions: [
+      "A designed page is not a delivered one. Stitch output is a candidate until it builds and instruments in `website/`.",
+      "Never let a render imply a capability that does not exist. What the page promises must fit what can actually be honoured; the disclosure line is part of the design.",
+    ],
+  },
+  v0: {
+    name: "v0 by Vercel",
+    use: "React/Tailwind implementation of an approved design — the code that actually ships under `website/`",
+    goals: ["validate-offer", "validate-demand", "content-distribution", "kickstarter-crowdfunding"],
+    howTo: [
+      "Generate from an accepted Stitch design or an existing `website/` component, so the code inherits a settled layout.",
+      "Keep it static. A fake-door test needs a form target and an event, not a backend.",
+      "Verify the conversion event fires before reporting a single observation; an untracked page yields a result that is not a result.",
+    ],
+    cautions: [
+      "Do not scaffold authentication, payments, or persistence to make a page feel real. Those imply a product the company does not have.",
+    ],
+  },
+  context7: {
+    name: "Context7",
+    use: "current, version-specific library documentation and code examples",
+    goals: ["analyze-market", "define-initial-icp", "validate-problem", "maintain-mvp-reliability", "compile-business-plan"],
+    howTo: [
+      "Query before writing code against any library, and pin the version the repository actually uses.",
+      "Cite library behaviour as an external source with the version and URL, not as reasoning.",
+      "When an integration decision is load-bearing for feasibility, save the fetched excerpt under `evidence/research/`.",
+    ],
+    cautions: [
+      "It answers how a library behaves, not whether anyone wants the product. It is not a market-evidence source.",
+    ],
+  },
+  linear: {
+    name: "Linear",
+    use: "issue tracking and detailed work decomposition behind a Paperclip outcome",
+    goals: ["validate-commercial-commitment", "validate-value-realization", "observe-product-usage", "build-prospect-universe", "bpw-business-plan"],
+    howTo: [
+      "Decompose the outcome into issues in Linear; keep Paperclip holding only blockers, approvals, milestones, and completion candidates.",
+      "For pilots and LOIs, one issue per commitment recording who, what, when, and the evidence link.",
+      "Link every Linear issue back to the Paperclip run id so the record reconciles.",
+    ],
+    cautions: [
+      "Linear is planning state, not company state. A business fact that must survive lives in `firm/`, not in an issue.",
+      "Respect the Linear mode on this dispatch; `NONE` means do not create a project.",
+    ],
+  },
+  tinybird: {
+    name: "Tinybird",
+    use: "real-time analytics over experiment traffic — impressions, clicks, signups, cohorts",
+    goals: ["validate-demand", "validate-retention", "validate-value-realization", "observe-product-usage", "analyze-unit-economics"],
+    howTo: [
+      "Declare the metric and decision threshold in the experiment record before reading any number, then query to that definition.",
+      "Report the denominator next to the rate; a conversion percentage without traffic volume is unusable.",
+      "Attach the query or result snapshot under `evidence/experiments/` so another person can reproduce it.",
+    ],
+    cautions: [
+      "Traffic is not demand and a click is not commitment. Report what the event means and what it cannot support.",
+      "Never invent a figure to fill a gap the pipeline does not cover — say the measurement is missing.",
+    ],
+  },
+  neon: {
+    name: "Neon",
+    use: "disposable serverless Postgres for transient experiment data",
+    goals: ["validate-demand", "maintain-mvp-reliability", "observe-product-usage"],
+    howTo: [
+      "Branch per experiment, and write the branch name into the experiment record.",
+      "Hold only event data: signups, clicks, form submissions, and their timestamps.",
+    ],
+    cautions: [
+      "Never a source of truth for a business fact. Anything that must survive rolls up into `firm/` and `business-case/`.",
+      "No real customer personal data without explicit founder approval.",
+    ],
+  },
+  supabase: {
+    name: "Supabase",
+    use: "serverless Postgres plus Edge Functions for a lightweight capture endpoint",
+    goals: ["validate-demand", "maintain-mvp-reliability", "kickstarter-crowdfunding"],
+    howTo: [
+      "An Edge Function may receive a waitlist or interest submission and record it. That is the whole scope.",
+      "Record the endpoint path and its event schema in the experiment record.",
+    ],
+    cautions: [
+      "Not application infrastructure. Deploying an Edge Function is an external effect and needs approval.",
+      "Never a source of truth for a business fact; company state stays in GitHub and `firm/`.",
+    ],
+  },
+};
+
+/** Capability token -> guide, falling back to a bare mention for an unknown token. */
+export function mcpGuide(capability: string): { name: string; use: string } {
+  const guide = MCP_SERVERS[capability];
+  return guide ? { name: guide.name, use: guide.use } : { name: capability, use: "declared for this outcome" };
+}
+
 export type ExternalActionPolicy = "DENIED" | "APPROVAL_REQUIRED" | "PREAUTHORIZED";
 export type LinearMode = "NONE" | "CREATE_PROJECT" | "CONTINUE_PROJECT";
 
@@ -26,6 +165,12 @@ export interface JulesSessionSpec {
    */
   assignment?: { title: string; description?: string; priority?: string; goal?: string };
   managerNotes?: string;
+  /**
+   * Where this agent's own reference material lives in the repository — its MCP guide and
+   * the founder-supplied templates it must orient against. Absolute from the repository
+   * root so the worker can read it without guessing at a layout.
+   */
+  resourcePath?: string;
   support?: {
     skills: string[];
     packs: Array<{ id: string; version: string; purpose: string; readPaths: string[]; sourceGuidance?: string; qualityGates: string[] }>;
@@ -56,7 +201,7 @@ export const JULES_OUTCOME_TEMPLATES = {
   offer: outcome({ id: "offer", title: "Offer variants", role: { slug: "offer-designer", title: "Offer Designer", description: "Create testable offers from validated customer language." }, objective: "Develop differentiated offer variants and measurable response hypotheses.", requiredOutputs: ["business-case/POSITIONING_CASE.md", "firm/experiments.firm"], acceptanceCriteria: ["Each offer maps to an ICP problem", "Success and failure thresholds are defined", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["Offer claims require unsupported proof"], writeScope: ["business-case/POSITIONING_CASE.md", "firm/experiments.firm"], capabilities: [] }),
   content: outcome({ id: "content", title: "Content packages", role: { slug: "content-producer", title: "Validation Content Producer", description: "Produce channel-specific validation assets, not vanity content." }, objective: "Create content packages that test a defined problem or offer hypothesis.", requiredOutputs: ["experiments/content/**", "firm/experiments.firm"], acceptanceCriteria: ["Every asset maps to an experiment", "Tracking and decision thresholds exist", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["Publishing authorization is absent"], writeScope: ["experiments/content/**", "firm/experiments.firm"], capabilities: [] }),
   channel_test: outcome({ id: "channel_test", title: "Channel test", role: { slug: "channel-experimenter", title: "Channel Experimenter", description: "Design compliant channel experiments and preserve behavioral evidence." }, objective: "Test whether the ICP can be reached repeatably through a specific channel.", requiredOutputs: ["evidence/experiments/**", "business-case/GTM_PLAN.md", "firm/experiments.firm"], acceptanceCriteria: ["Metrics and thresholds are predeclared", "Observed results are preserved", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["External action approval is missing"], writeScope: ["evidence/experiments/**", "business-case/GTM_PLAN.md", "firm/experiments.firm"], capabilities: ["tinybird"] }),
-  fake_door: outcome({ id: "fake_door", title: "Fake-door experiment", role: { slug: "fake-door-builder", title: "Fake-door Experiment Builder", description: "Implement an instrumented static offer test without implying an unavailable product exists." }, objective: "Deploy a measurable fake-door or landing-page demand experiment.", requiredOutputs: ["website/**", "experiments/**", "evidence/experiments/**"], acceptanceCriteria: ["Static site builds", "Disclosure is truthful", "Conversion instrumentation works", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["The page misrepresents product availability", "Tracking cannot be verified"], writeScope: ["website/**", "experiments/**", "evidence/experiments/**", "firm/experiments.firm"], capabilities: ["stitch", "tinybird"] }),
+  fake_door: outcome({ id: "fake_door", title: "Fake-door experiment", role: { slug: "fake-door-builder", title: "Fake-door Experiment Builder", description: "Implement an instrumented static offer test without implying an unavailable product exists." }, objective: "Deploy a measurable fake-door or landing-page demand experiment.", requiredOutputs: ["website/**", "experiments/**", "evidence/experiments/**"], acceptanceCriteria: ["Static site builds", "Disclosure is truthful", "Conversion instrumentation works", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["The page misrepresents product availability", "Tracking cannot be verified"], writeScope: ["website/**", "experiments/**", "evidence/experiments/**", "firm/experiments.firm"], capabilities: ["stitch", "v0", "tinybird", "supabase"] }),
   commitment: outcome({ id: "commitment", title: "Calls, LOIs, or deposits", role: { slug: "commitment-analyst", title: "Commitment Analyst", description: "Measure willingness to commit while enforcing approval gates for external actions." }, objective: "Test strong intent through calls, LOIs, deposits, or meaningful pilots.", requiredOutputs: ["evidence/sales/**", "firm/opportunities.firm", "business-case/DEMAND_EXPERIMENT_REPORT.md"], acceptanceCriteria: ["Commitments are independently verifiable", "External actions were authorized", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["No authorized commitment mechanism exists"], writeScope: ["evidence/sales/**", "firm/opportunities.firm", "business-case/DEMAND_EXPERIMENT_REPORT.md"], capabilities: ["linear"] }),
   concierge: outcome({ id: "concierge", title: "Concierge delivery", role: { slug: "concierge-operator", title: "Concierge Delivery Operator", description: "Deliver the customer outcome manually before automating it." }, objective: "Test whether the promised outcome can be delivered and valued without a full product build.", requiredOutputs: ["evidence/experiments/**", "business-case/DELIVERY_REPORT.md", "firm/interactions.firm"], acceptanceCriteria: ["Delivery and effort are measured", "Customer outcome is recorded", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["Delivery requires an unauthorized sensitive action"], writeScope: ["evidence/experiments/**", "business-case/DELIVERY_REPORT.md", "firm/interactions.firm"], capabilities: ["linear"] }),
   retention: outcome({ id: "retention", title: "Retention and repeat", role: { slug: "retention-analyst", title: "Retention Analyst", description: "Evaluate repeat behavior and ongoing value from observed use." }, objective: "Determine whether customers repeat, retain, or request continued delivery.", requiredOutputs: ["business-case/RETENTION_REPORT.md", "evidence/experiments/**", "firm/evidence.firm"], acceptanceCriteria: ["Retention claims use observed cohorts", "Missing follow-up is not treated as retention", "Firm files are edited as well-formed entity records"], cannotCompleteIf: ["No elapsed repeat-use window exists"], writeScope: ["business-case/RETENTION_REPORT.md", "evidence/experiments/**", "firm/evidence.firm"], capabilities: ["tinybird"] }),
@@ -65,6 +210,43 @@ export const JULES_OUTCOME_TEMPLATES = {
 } as const;
 
 const bullets = (items: string[]) => items.length ? items.map((item) => `- ${item}`).join("\n") : "- None supplied";
+
+/**
+ * The tools section of a dispatch prompt.
+ *
+ * A worker is told which servers it holds and where its written guide lives, but is not told
+ * to use them. The broker treats a template's capability list as advisory for exactly this
+ * reason: an earlier build that treated it as a requirement denied dispatches over tooling
+ * the outcome never needed. Listing the grant plus the guide path keeps the nudge advisory.
+ */
+function renderToolSection(spec: JulesSessionSpec): string {
+  // Only name a guide the bootstrap actually wrote. A pointer at a file that is not there
+  // teaches the worker that references in its prompt are unreliable, which costs more than
+  // the guidance is worth.
+  const guidePath = spec.resourcePath ? `${spec.resourcePath}/MCP-GUIDE.md` : null;
+  const pointer = guidePath
+    ? `Read \`${guidePath}\` before starting: it gives the procedure and the limits for each server above.`
+    : null;
+  if (!spec.capabilities.length) {
+    return [
+      "No MCP server is declared for this outcome; work from the repository and the public web.",
+      "Name a server as a blocker only if the outcome genuinely cannot be produced without it.",
+      ...(pointer ? [pointer] : []),
+    ].join(" ");
+  }
+  const servers = spec.capabilities.map((capability: string) => {
+    const guide = mcpGuide(capability);
+    return `- **${guide.name}** (\`${capability}\`) — ${guide.use}.`;
+  });
+  return [
+    ...servers,
+    ...(pointer ? ["", pointer] : []),
+    "A server you hold is a capability, not an instruction to use it — reach for one only where it advances this outcome.",
+    "",
+    "Neon and Supabase are for transient, disposable query work only. Company state stays in GitHub and `firm/*.firm`: never make a Postgres database the source of truth for a business fact, and never create one to hold what a Firm file already holds.",
+    "Render Static is only for static sites; services target Hugging Face Spaces.",
+  ].join("\n");
+}
 
 export function renderJulesPrompt(spec: JulesSessionSpec): string {
   if (spec.version !== JULES_PROMPT_VERSION) throw new Error(`Unsupported Jules prompt version: ${spec.version}`);
@@ -112,6 +294,13 @@ ${spec.assignment.description?.trim() || "No description was supplied. Work from
 ` : ""}
 ## Inputs
 ${bullets(spec.inputs)}
+${spec.resourcePath ? `
+## Your reference material
+\`${spec.resourcePath}/MCP-GUIDE.md\` — how to use each server granted to you, and where not to.
+\`${spec.resourcePath}/templates/\` — founder-supplied format and layout guidance. Read whatever
+matches the artifact you are producing and follow its structure. If the folder is empty, say so
+and work from the goal contract alone; do not invent a format and present it as the company's.
+` : ""}
 
 ## Required outputs
 ${bullets(spec.requiredOutputs)}
@@ -143,27 +332,7 @@ What practitioners say in their own words is first-class evidence: named communi
 Include what cuts against the thesis. A landscape in which every fact supports the plan has not been researched, it has been assembled. Name the competitor that already does what we propose, the price point that undercuts us, the reason a segment might be unreachable — and where you looked for disconfirming evidence and did not find it, say that too.
 
 ## Tools and deployment
-${(() => {
-  const available = spec.capabilities.length ? spec.capabilities : [];
-  const mcpMap: Record<string, { name: string; use: string }> = {
-    context7: { name: "Context7", use: "API documentation lookup — always consult before coding" },
-    linear: { name: "Linear", use: "Issue/project tracking — use for structured work tracking" },
-    tinybird: { name: "Tinybird", use: "Real-time analytics — query dashboards for evidence" },
-    stitch: { name: "v0 by Vercel", use: "UI generation — for fake-door frontend code" },
-    neon: { name: "Neon", use: "Serverless Postgres — only for transient query results" },
-    supabase: { name: "Supabase", use: "Serverless Postgres — only for transient query results" },
-  };
-  const listed = available.map((c: string) => {
-    const m = mcpMap[c];
-    return m ? `- **${m.name}** — ${m.use}` : `- ${c}`;
-  }).join("\n");
-  return listed || "No MCP tools declared for this outcome.";
-})()}
-
-Neon and Supabase are for transient, disposable query work only. Company state stays in
-GitHub and \`firm/*.firm\`: never make a Postgres database the source of truth for a
-business fact, and never create one to hold what a Firm file already holds.
-Render Static is only for static sites; services target Hugging Face Spaces.
+${renderToolSection(spec)}
 
 ## Goal-specific support
 Required reasoning skills: ${spec.support?.skills.length ? spec.support.skills.join(", ") : "None"}.
