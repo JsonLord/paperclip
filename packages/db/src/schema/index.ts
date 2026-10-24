@@ -73,3 +73,5 @@ export { publishingAccounts, contentCandidates, socialPublications, contentStrat
 export { crowdfundingCampaigns, crowdfundingEvents } from "./crowdfunding.js";
 
 export { controllerLeases } from "./controller_leases.js";
+
+export { dispatchIntents } from "./dispatch_intents.js";

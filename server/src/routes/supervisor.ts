@@ -4,12 +4,16 @@ import type { Db } from "@paperclipai/db";
 import { julesSessions } from "@paperclipai/db";
 import {
   acquireControllerLeaseSchema,
+  activateDispatchSchema,
+  reconcileDispatchSchema,
   releaseControllerLeaseSchema,
   verifyControllerLeaseSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { controllerLeaseService } from "../services/controller-lease.js";
+import { dispatchLedgerService, type DispatchState } from "../services/dispatch-ledger.js";
+import { heartbeatService } from "../services/heartbeat.js";
 
 const ACTIVE_JULES_STATES = ["QUEUED", "IN_PROGRESS", "COMPLETED_UNVALIDATED", "WAITING"];
 
@@ -35,6 +39,8 @@ function parsePaging(req: Request) {
 export function supervisorRoutes(db: Db) {
   const router = Router();
   const leases = controllerLeaseService(db);
+  const ledger = dispatchLedgerService(db);
+  const heartbeat = heartbeatService(db);
 
   // Read-only: the current controller lease for a company. Any board observer can see
   // who owns dispatch authority and the fencing token without creating or changing state.
@@ -123,6 +129,132 @@ export function supervisorRoutes(db: Db) {
       finishedAt: row.finishedAt,
     }));
     res.json({ sessions, nextOffset: hasMore ? offset + sessions.length : null });
+  }));
+
+
+  // Idempotent campaign dispatch (WP3). Lease-verified, ledger-recorded, and
+  // replay-safe: re-sending the same activationKey never wakes the agent again.
+  router.post("/companies/:companyId/supervisor/dispatch", validate(activateDispatchSchema), run(async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, companyId);
+    const lease = await leases.verifyLease({ companyId, controllerId: req.body.controllerId, fencingToken: req.body.fencingToken });
+    if (!lease.ok) {
+      res.status(403).json({ error: "LEASE_REJECTED", code: lease.code });
+      return;
+    }
+    const unknowns = await ledger.listIntents({ companyId, state: "UNKNOWN", limit: 100 });
+    if (unknowns.rows.some((row) => row.agentId === req.body.agentId)) {
+      res.status(409).json({ error: "UNKNOWN_RECONCILIATION_REQUIRED", message: "a prior dispatch for this agent has an unresolved outcome" });
+      return;
+    }
+    const recorded = await ledger.recordIntent({
+      companyId,
+      agentId: req.body.agentId,
+      issueId: req.body.issueId ?? null,
+      activationKey: req.body.activationKey,
+      fencingToken: req.body.fencingToken,
+      controllerId: req.body.controllerId,
+    });
+    if (recorded.kind === "REPLAY") {
+      res.status(200).json({ replayed: true, intent: recorded.intent });
+      return;
+    }
+    try {
+      const wakeRun = await heartbeat.wakeup(req.body.agentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: `activation:${req.body.activationKey}`,
+        payload: null,
+        idempotencyKey: req.body.activationKey,
+        requestedByActorType: "user",
+        requestedByActorId: req.actor.userId ?? null,
+        contextSnapshot: { triggeredBy: "supervisor", activationKey: req.body.activationKey },
+      });
+      if (!wakeRun) {
+        const failed = await ledger.transition({ id: recorded.intent.id, fromState: "INTENT", toState: "FAILED", errorCode: "WAKE_SKIPPED" });
+        res.status(202).json({ status: "skipped", intent: failed });
+        return;
+      }
+      const dispatched = await ledger.transition({ id: recorded.intent.id, fromState: "INTENT", toState: "DISPATCHED", runId: wakeRun.id });
+      res.status(200).json({ status: "dispatched", intent: dispatched });
+    } catch (err) {
+      const unknown = await ledger.transition({
+        id: recorded.intent.id,
+        fromState: "INTENT",
+        toState: "UNKNOWN",
+        errorCode: err instanceof Error ? err.name : "WAKE_ERROR",
+        detail: { message: err instanceof Error ? String(err.message).slice(0, 300) : "unknown error" },
+      });
+      res.status(502).json({ error: "WAKE_OUTCOME_UNKNOWN", intent: unknown });
+    }
+  }));
+
+  // Reconcile a dispatch by activation key. UNKNOWN is only resolvable by an
+  // explicit confirmation that no provider session exists.
+  router.post("/companies/:companyId/supervisor/dispatch/reconcile", validate(reconcileDispatchSchema), run(async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, companyId);
+    const lease = await leases.verifyLease({ companyId, controllerId: req.body.controllerId, fencingToken: req.body.fencingToken });
+    if (!lease.ok) {
+      res.status(403).json({ error: "LEASE_REJECTED", code: lease.code });
+      return;
+    }
+    const intent = await ledger.getByKey(req.body.activationKey);
+    if (!intent || intent.companyId !== companyId) {
+      res.status(404).json({ error: "DISPATCH_INTENT_NOT_FOUND" });
+      return;
+    }
+    if (intent.state === "CONFIRMED" || intent.state === "FAILED") {
+      res.status(200).json({ already: intent.state, intent });
+      return;
+    }
+    let updated = null;
+    if (intent.state === "UNKNOWN") {
+      if (req.body.outcome === "pre_allocation_failure" && req.body.noSessionConfirmed === true) {
+        updated = await ledger.transition({ id: intent.id, fromState: "UNKNOWN", toState: "FAILED", errorCode: req.body.errorCode ?? "NO_SESSION_CONFIRMED", externalSessionId: null });
+      }
+      if (!updated) {
+        res.status(409).json({ error: "UNKNOWN_STILL_BLOCKED", message: "confirm no provider session exists before resolving this dispatch" });
+        return;
+      }
+    } else if (req.body.outcome === "confirmed") {
+      if (!req.body.runId) {
+        res.status(422).json({ error: "RUN_ID_REQUIRED" });
+        return;
+      }
+      updated = await ledger.transition({ id: intent.id, fromState: "DISPATCHED", toState: "CONFIRMED", runId: req.body.runId, externalSessionId: req.body.externalSessionId ?? null });
+    } else if (req.body.outcome === "pre_allocation_failure") {
+      if (!req.body.errorCode) {
+        res.status(422).json({ error: "ERROR_CODE_REQUIRED" });
+        return;
+      }
+      updated = await ledger.transition({ id: intent.id, fromState: "DISPATCHED", toState: "FAILED", errorCode: req.body.errorCode, externalSessionId: null });
+    } else {
+      updated = await ledger.transition({ id: intent.id, fromState: "DISPATCHED", toState: "UNKNOWN", errorCode: req.body.errorCode ?? null });
+    }
+    if (!updated) {
+      res.status(409).json({ error: "DISPATCH_CAS_CONFLICT" });
+      return;
+    }
+    res.status(200).json({ intent: updated });
+  }));
+
+  // Read-only dispatch ledger listing with pagination and optional state filter.
+  router.get("/companies/:companyId/supervisor/dispatch-intents", run(async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, companyId);
+    const { limit, offset } = parsePaging(req);
+    const stateParam = typeof req.query.state === "string" && req.query.state.length > 0 ? req.query.state : null;
+    const allowed = ["INTENT", "DISPATCHED", "CONFIRMED", "FAILED", "UNKNOWN"];
+    if (stateParam && !allowed.includes(stateParam)) {
+      res.status(400).json({ error: "INVALID_STATE_FILTER" });
+      return;
+    }
+    const page = await ledger.listIntents({ companyId, state: stateParam as DispatchState | undefined, limit, offset });
+    res.json({ intents: page.rows, nextOffset: page.nextOffset });
   }));
 
   return router;

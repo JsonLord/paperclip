@@ -279,6 +279,8 @@ export {
   acquireControllerLeaseSchema,
   verifyControllerLeaseSchema,
   releaseControllerLeaseSchema,
+  activateDispatchSchema,
+  reconcileDispatchSchema,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,

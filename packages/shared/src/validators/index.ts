@@ -236,3 +236,10 @@ export {
   type VerifyControllerLease,
   type ReleaseControllerLease,
 } from "./controller-lease.js";
+
+export {
+  activateDispatchSchema,
+  reconcileDispatchSchema,
+  type ActivateDispatch,
+  type ReconcileDispatch,
+} from "./dispatch-ledger.js";
