@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
+import { logger } from "./middleware/logger.js";
 import {
   AUTH_BASE_URL_MODES,
   DEPLOYMENT_EXPOSURES,
@@ -70,6 +71,12 @@ export interface Config {
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
+  /**
+   * Bearer credential read from PAPERCLIP_ADMIN_API_KEY. Undefined unless the variable is
+   * set and at least 32 characters, so an unset or weak value leaves the request path
+   * unreachable rather than degrading to a guessable secret.
+   */
+  adminApiKey?: string;
 }
 
 export function loadConfig(): Config {
@@ -210,6 +217,19 @@ export function loadConfig(): Config {
       resolveDefaultBackupDir(),
   );
 
+  const rawAdminKey = process.env.PAPERCLIP_ADMIN_API_KEY?.trim();
+  let adminApiKey: string | undefined;
+  if (rawAdminKey) {
+    if (rawAdminKey.length >= 32) {
+      adminApiKey = rawAdminKey;
+    } else {
+      logger.warn(
+        { envVar: "PAPERCLIP_ADMIN_API_KEY", length: rawAdminKey.length },
+        "PAPERCLIP_ADMIN_API_KEY is set but shorter than 32 characters – ignored",
+      );
+    }
+  }
+
   return {
     deploymentMode,
     deploymentExposure,
@@ -252,5 +272,6 @@ export function loadConfig(): Config {
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
+    adminApiKey,
   };
 }

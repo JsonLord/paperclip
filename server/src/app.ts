@@ -89,6 +89,7 @@ export async function createApp(
     localPluginDir?: string;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    adminApiKey?: string;
   },
 ) {
   const app = express();
@@ -116,6 +117,7 @@ export async function createApp(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
       resolveSession: opts.resolveSession,
+      adminApiKey: opts.adminApiKey,
     }),
   );
   app.get("/api/auth/get-session", (req, res) => {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -15,6 +16,7 @@ function hashToken(token: string) {
 interface ActorMiddlewareOptions {
   deploymentMode: DeploymentMode;
   resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
+  adminApiKey?: string;
 }
 
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
@@ -88,6 +90,32 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
       .then((rows) => rows[0] ?? null);
 
     if (!key) {
+      // A bearer credential from the environment, for calling the API as an operator without a
+      // browser session. It is checked after the agent-key lookup so an existing key still
+      // resolves to its agent: this path is a fallback for a token the database does not know,
+      // never an override of one it does.
+      //
+      // Length is compared before timingSafeEqual, which throws rather than returning false on a
+      // length mismatch. The length itself is not secret at this length, and neither early return
+      // reveals anything an attacker could not learn by trying the token.
+      if (opts.adminApiKey) {
+        const candidate = Buffer.from(token);
+        const expected = Buffer.from(opts.adminApiKey);
+        if (candidate.length === expected.length && timingSafeEqual(candidate, expected)) {
+          req.actor = {
+            type: "board",
+            // Must match the row seeded at boot: board actors are reported downstream as a user,
+            // and this id is written into columns with a foreign key to "user".
+            userId: "paperclip-admin",
+            isInstanceAdmin: true,
+            runId: runIdHeader || undefined,
+            source: "admin_api_key",
+          };
+          next();
+          return;
+        }
+      }
+
       const claims = verifyLocalAgentJwt(token);
       if (!claims) {
         next();
