@@ -29,6 +29,17 @@ and every request that MODIFIES an issue also sends:
 Nothing blocks these commands. Run them. A 401 means the header was missing or
 misspelled, not that you lack permission and not that a policy stopped you.
 
+## Available MCP Tools
+The following MCP servers are available. Use them when their capabilities match your task:
+- **Context7** — API documentation lookup; always consult before coding against a library
+- **Linear** — Issue/project tracking; use for structured work tracking and decomposition
+- **Tinybird** — Real-time analytics; query dashboards for evidence and metrics
+- **v0 by Vercel** — UI generation; use for fake-door frontend code and landing pages
+- **Neon** — Serverless Postgres; only for transient query results, never company state
+- **Supabase** — Serverless Postgres; only for transient query results, never company state
+
+Do NOT add Postgres, another company-state database, or persistent data stores beyond what is declared above.
+
 Your Paperclip identity:
   Agent ID: {{agentId}}
   Company ID: {{companyId}}

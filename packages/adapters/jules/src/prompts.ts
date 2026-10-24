@@ -143,8 +143,24 @@ What practitioners say in their own words is first-class evidence: named communi
 Include what cuts against the thesis. A landscape in which every fact supports the plan has not been researched, it has been assembled. Name the competitor that already does what we propose, the price point that undercuts us, the reason a segment might be unreachable — and where you looked for disconfirming evidence and did not find it, say that too.
 
 ## Tools and deployment
-Required capabilities: ${spec.capabilities.join(", ") || "none beyond the repository itself"}.
-Use Context7 for current API behavior, Stitch for specified design work, Tinybird only for analytics, and Linear when enabled. Do not add Supabase, Neon, Postgres, or another company-state database. Render Static is only for static sites; services target Hugging Face Spaces.
+${(() => {
+  const available = spec.capabilities.length ? spec.capabilities : [];
+  const mcpMap: Record<string, { name: string; use: string }> = {
+    context7: { name: "Context7", use: "API documentation lookup — always consult before coding" },
+    linear: { name: "Linear", use: "Issue/project tracking — use for structured work tracking" },
+    tinybird: { name: "Tinybird", use: "Real-time analytics — query dashboards for evidence" },
+    stitch: { name: "v0 by Vercel", use: "UI generation — for fake-door frontend code" },
+    neon: { name: "Neon", use: "Serverless Postgres — only for transient query results" },
+    supabase: { name: "Supabase", use: "Serverless Postgres — only for transient query results" },
+  };
+  const listed = available.map((c: string) => {
+    const m = mcpMap[c];
+    return m ? `- **${m.name}** — ${m.use}` : `- ${c}`;
+  }).join("\n");
+  return listed || "No MCP tools declared for this outcome.";
+})()}
+
+Do not add Neon, Supabase, Postgres, or another company-state database. Render Static is only for static sites; services target Hugging Face Spaces.
 
 ## Goal-specific support
 Required reasoning skills: ${spec.support?.skills.length ? spec.support.skills.join(", ") : "None"}.
