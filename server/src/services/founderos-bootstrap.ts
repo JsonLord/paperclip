@@ -15,6 +15,51 @@ export interface FounderOsBootstrapOptions { contentSource?: string; contentComm
 
 const firmConcepts = ["hypothesis","claim","evidence","experiment","customer_segment","problem","job_to_be_done","offer","value_proposition","competitor","market_estimate","assumption","decision","metric","validation_gate","account","lead","contact","interaction","opportunity","channel"];
 export function founderOsBootstrapFiles(sourceCommit: string): Record<string, string> {
+   const header = `# FounderOS managed context\nversion: ${FOUNDEROS_CONTEXT_VERSION}\nsource: ${FOUNDEROS_CONTENT_SOURCE}\nsource_commit: ${sourceCommit}\n`;
+   const schema = (group: string, concepts: string[]) => `# FounderOS Firm schema ${group} v1\n${concepts.map((name) => `entity ${name} { id: string; status: string; source_ids: string[] }`).join("\n")}\n`;
+   const files: Record<string,string> = {
+@@
+-  return files;
+-}
+-
+-export function missingBootstrapFiles(paths: string[], sourceCommit: string) { const present = new Set(paths); return Object.fromEntries(Object.entries(founderOsBootstrapFiles(sourceCommit)).filter(([path]) => !present.has(path))); }
++  return files;
++}
++
++/**
++ * Create placeholder resource folders for each worker in the workforce.
++ *
++ * These folders are placed under `.paperclip/resources/{worker-key}/` inside the
++ * company repository. They are intended to hold artefacts such as the Business‑Model
++ * Canvas, pitch documents and other validation deliverables that each Jules worker
++ * will generate during the validation programme.
++ *
++ * The function returns a map of file paths to empty string contents, which can be
++ * merged into the bootstrap file set. Adding a `.gitkeep` file ensures the folder
++ * exists in Git even when it otherwise contains no files.
++ */
++export function createResourceFoldersForWorkforce(workforce: readonly { key: string }[]): Record<string, string> {
++  const files: Record<string, string> = {};
++  for (const worker of workforce) {
++    const placeholderPath = `.paperclip/resources/${worker.key}/.gitkeep`;
++    files[placeholderPath] = "";
++  }
++  return files;
++}
++
++/**
++ * Return the set of bootstrap files that are missing from the repository.
++ * This includes the core FounderOS files as well as placeholder resource
++ * folders for each worker in the workforce.
++ */
++export function missingBootstrapFiles(paths: string[], sourceCommit: string) {
++  const present = new Set(paths);
++  const coreFiles = founderOsBootstrapFiles(sourceCommit);
++  const resourceFiles = createResourceFoldersForWorkforce(founderOsWorkforce);
++  const allFiles = { ...coreFiles, ...resourceFiles };
++  return Object.fromEntries(Object.entries(allFiles).filter(([path]) => !present.has(path)));
++}
+*** End Patch
   const header = `# FounderOS managed context\nversion: ${FOUNDEROS_CONTEXT_VERSION}\nsource: ${FOUNDEROS_CONTENT_SOURCE}\nsource_commit: ${sourceCommit}\n`;
   const schema = (group: string, concepts: string[]) => `# FounderOS Firm schema ${group} v1\n${concepts.map((name) => `entity ${name} { id: string; status: string; source_ids: string[] }`).join("\n")}\n`;
   const files: Record<string,string> = {

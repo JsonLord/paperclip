@@ -37,6 +37,7 @@ export const founderOsDeploymentGoalTemplates: GoalTemplate[] = [
 export const founderOsWorkforce = [
   { key: "evidence", name: "Evidence Steward", title: "Evidence / Validation", roleAliases: ["evidence"] },
   { key: "market", name: "Market Analyst", title: "Market / ICP Research", roleAliases: ["market"] },
+  { key: "researcher", name: "Future Researcher", title: "Long‑form Researcher", roleAliases: ["researcher", "analyst"] },
   { key: "customer", name: "Customer Researcher", title: "Customer Discovery / Value", roleAliases: ["customer", "research"] },
   { key: "experiment", name: "Growth Experimenter", title: "Offer / Demand Experiments", roleAliases: ["experiment"] },
   { key: "sales", name: "Commercial Lead", title: "Prospecting / Commercial Commitment", roleAliases: ["prospect", "sales"] },
