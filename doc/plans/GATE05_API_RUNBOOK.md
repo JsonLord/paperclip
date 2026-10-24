@@ -107,3 +107,36 @@ backoff-retry OK; mutating: reconcile first, never blind-retry.
 Auth-route bodies are never logged; headers/token-shaped fields are redacted server-side.
 Still: never enable shell tracing, never echo `$PAPERCLIP_ADMIN_API_TOKEN`, and treat any
 value seen in logs as compromised (rotate via the operator workflow, never in chat).
+
+
+## Supervisor routes added by GATE05-R (status: CANDIDATE — implemented on the
+## engineering branch, NOT yet deployed to the live Space; base URL below is the
+## deployed origin, these paths 404 until R8 deployment is approved)
+
+All routes require board auth and are company-scoped. Paths are relative to
+`$PAPERCLIP_BASE_URL/api`.
+
+### Controller ownership (WP2) — single-controller fencing
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET  | `/companies/<company-id>/supervisor/controller-lease` | Read the current lease + fencing token |
+| POST | `/companies/<company-id>/supervisor/controller-lease/acquire` | CAS takeover of an EXPIRED lease only; returns a monotonic fencing token |
+| POST | `/companies/<company-id>/supervisor/controller-lease/verify` | Validate `{controllerId,fencingToken}`; codes STALE_FENCING_TOKEN / NOT_LEASE_HOLDER / LEASE_EXPIRED |
+| POST | `/companies/<company-id>/supervisor/controller-lease/release` | Release; burns the token so it cannot be replayed |
+
+### Idempotent dispatch (WP3) — replay-safe campaign activation
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/companies/<company-id>/supervisor/dispatch` | Lease-verified wake. Same `activationKey` replayed returns the stored record (`replayed:true`) and never wakes again. Wake-error sets state UNKNOWN and blocks re-dispatch of that agent. |
+| POST | `/companies/<company-id>/supervisor/dispatch/reconcile` | Resolve an intent: confirmed / pre_allocation_failure / unknown. UNKNOWN clears only with `noSessionConfirmed:true`. |
+| GET  | `/companies/<company-id>/supervisor/dispatch-intents` | Paginated ledger (`limit,offset,?state=`); `nextOffset` for paging. |
+
+Intent states: `INTENT → DISPATCHED → CONFIRMED | FAILED | UNKNOWN`. `CONFIRMED`/`FAILED` are terminal and immutable. Re-running a FAILED activation requires a NEW `activationKey`.
+
+### Provider observability (WP2) — read-only Jules session list
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/companies/<company-id>/supervisor/jules-sessions` | Company-scoped, paginated read of Jules session state so terminality is independently observable (closes the Oct-24 gap where a native run could succeed while remote state was unverifiable). Read-only; allocates nothing. |
+
+Reproduce locally: see `doc/plans/GATE05_API_RUNBOOK.md` “PostgreSQL” section + `scripts/start-local-pg.sh`; the gated suites are `controller-lease.pg.test.ts`, `dispatch-ledger.pg.test.ts`, `backup-restore.pg.test.ts` (all `NOT_RUN` without `DATABASE_URL`).
+<!-- supervisor/dispatch-reconcile-marker -->
