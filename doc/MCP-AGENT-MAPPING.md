@@ -142,6 +142,25 @@ A refusal is a 422 naming the reason, so the agent can report a real blocker ins
 a peer. A wake that fails is reported as `woke: false` rather than dropped into a floating
 promise: that issue would otherwise sit in `todo` forever with nobody coming.
 
+### How the work gets back
+
+Asked-for work has to come back, and the two runners do it differently because only one of them
+can talk to Paperclip:
+
+- A **local** assignee comments on its own issue and `@mentions` the requester. The mention is what
+  wakes them, which is why `findMentionedAgents` has to match whole names — it matched only a single
+  whitespace-delimited token, so `@Document Compiler` resolved to `document`, matched nothing, and
+  woke nobody. Every FounderOS role has a multi-word name, so no agent could ever hand work back
+  and no founder could raise one from the board.
+- A **Jules** assignee has no credential, so its comment would never post. Its completion candidate
+  is the hand-back, and on promotion the server wakes the requester under `handoff_returned`. That
+  wake is gated on `requestDepth > 0`: ordinary work is created by the Founder Manager, so returning
+  on every completion would start a full manager run each time any worker finished anything.
+
+The handoff description branches on the **assignee's** adapter, since it is the assignee reading it.
+An instruction an agent cannot physically follow is worse than none: it produces a comment that
+never posts or a mention that never wakes anyone, and both look like the peer being ignored.
+
 Assignment needs an active `companyMemberships` row *and* a `tasks:assign` grant — `hasPermission`
 checks membership first and returns false without one. No agent used to get a membership, which is
 why only the Founder Manager could assign, and it did so through a `role === "ceo"` legacy branch
