@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
+import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { julesSessions } from "@paperclipai/db";
@@ -14,6 +15,7 @@ import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { controllerLeaseService } from "../services/controller-lease.js";
 import { dispatchLedgerService, type DispatchState } from "../services/dispatch-ledger.js";
 import { heartbeatService } from "../services/heartbeat.js";
+import { providerArtifactReaderService } from "../services/artifact-reader.js";
 
 const ACTIVE_JULES_STATES = ["QUEUED", "IN_PROGRESS", "COMPLETED_UNVALIDATED", "WAITING"];
 
@@ -36,11 +38,14 @@ function parsePaging(req: Request) {
   return { limit, offset };
 }
 
+const readArtifactSchema = z.object({ paperclipRunId: z.string().min(1).max(64) }).strict();
+
 export function supervisorRoutes(db: Db) {
   const router = Router();
   const leases = controllerLeaseService(db);
   const ledger = dispatchLedgerService(db);
   const heartbeat = heartbeatService(db);
+  const artifacts = providerArtifactReaderService(db, { githubToken: process.env.GITHUB_TOKEN });
 
   // Read-only: the current controller lease for a company. Any board observer can see
   // who owns dispatch authority and the fencing token without creating or changing state.
@@ -255,6 +260,17 @@ export function supervisorRoutes(db: Db) {
     }
     const page = await ledger.listIntents({ companyId, state: stateParam as DispatchState | undefined, limit, offset });
     res.json({ intents: page.rows, nextOffset: page.nextOffset });
+  }));
+
+  // Read-only, board-authenticated, company-scoped provider-artifact lookup (WP8).
+  // Uses the deployment GitHub credential server-side; retrieval is separated from
+  // validation/acceptance and returns a recoverable code on a miss.
+  router.post("/companies/:companyId/supervisor/artifact/read", validate(readArtifactSchema), run(async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, companyId);
+    const result = await artifacts.readForRun({ companyId, paperclipRunId: req.body.paperclipRunId as string });
+    res.status(200).json(result);
   }));
 
   return router;

@@ -94,3 +94,23 @@ def validate(product, activation, task):
         "accepted": False,
         "headSha": product.get("headSha"),
     }
+
+
+def classify_provenance(product, verdict=None):
+    """Separate a provider-verified artifact from a bare API registration.
+
+    A provider artifact must carry an immutable 40-hex head, verified PR metadata and
+    real paths. Anything else (e.g. a manually injected document) is API_REGISTRATION_ONLY
+    and can never masquerade as provider-generated evidence.
+    """
+    head = product.get("headSha") or ""
+    provider = bool(
+        re.fullmatch("[0-9a-f]{40}", head)
+        and product.get("prMetadataVerified")
+        and product.get("paths")
+    )
+    if not provider:
+        return "API_REGISTRATION_ONLY"
+    if verdict and verdict.get("verdict") == "FAIL":
+        return "PROVIDER_ARTIFACT_RETRIEVED"
+    return "PROVIDER_ARTIFACT_VERIFIED"

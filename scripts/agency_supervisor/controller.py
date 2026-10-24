@@ -4,11 +4,19 @@ No provider credentials, direct SQL, detached provider watcher, or native auth b
 
 import copy, json, time, uuid, re
 from .core import ACTIVE, TERMINAL, SOURCE_SHA, recommend, identity_prompt, template_id
-from .validation import validate
+from .validation import validate, classify_provenance
 
 
 class SafetyError(RuntimeError):
     pass
+
+
+class ArtifactUnavailable(RuntimeError):
+    """Provider artifact cannot be retrieved now; recoverable without a new wake."""
+    def __init__(self, code, status=None):
+        super().__init__("provider artifact unavailable: " + str(code))
+        self.code = code
+        self.status = status
 
 
 def require(value, reason):
@@ -594,6 +602,18 @@ class Supervisor:
                 )
             try:
                 product = self.artifact_reader(act)
+            except ArtifactUnavailable as miss:
+                return self.finish(
+                    key,
+                    "REVIEW_REQUIRED",
+                    {
+                        "verdict": "REVIEW_REQUIRED",
+                        "findings": ["ARTIFACT_RETRIEVAL_RECOVERABLE:" + str(miss.code)],
+                        "accepted": False,
+                        "recoverable": True,
+                        "classification": "API_REGISTRATION_ONLY",
+                    },
+                )
             except Exception:
                 return self.finish(
                     key,
@@ -612,9 +632,27 @@ class Supervisor:
                     **product,
                     "bodies": {k: "[REDACTED]" for k in product.get("bodies", {})},
                 }
-            act.update(validation=verdict, product=product, status="VALIDATING")
+            classification = classify_provenance(product, verdict)
+            verdict = {**verdict, "classification": classification}
+            act.update(
+                validation=verdict,
+                product=product,
+                status="VALIDATING",
+                lifecycle={
+                    "executionSucceeded": True,
+                    "artifactRetrieved": bool(product.get("artifactRetrieved", True)),
+                    "artifactValidated": verdict["verdict"] != "FAIL",
+                    "workProductRegistered": False,
+                    "accepted": False,
+                    "classification": classification,
+                },
+            )
             self.save(state, doc)
             self.register_product(key)
+            state, doc = self.read()
+            act = state["activations"][key]
+            act["lifecycle"] = {**(act.get("lifecycle") or {}), "workProductRegistered": True}
+            self.save(state, doc)
             return self.finish(key, verdict["verdict"])
         if run["status"] in ("failed", "cancelled") and not act.get("remoteSessionId"):
             return self.finish(

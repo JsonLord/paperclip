@@ -84,7 +84,7 @@ def main():
         api,
         cid,
         args.control_issue,
-        lambda a: read_product(a, args.cache),
+        lambda a: read_product(a, api),
         persona_loader=persona_loader if args.catalog else None,
     )
     if args.command in [
