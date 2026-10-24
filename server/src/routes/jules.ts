@@ -10,10 +10,21 @@ import { requestJulesReconciliation } from "../services/jules-reconciler.js";
 import { assertCapabilityBinding, julesCallbackService, type JulesCallbackEventType } from "../services/jules-callbacks.js";
 import { issueJulesRunCapability, JULES_RUN_OPERATIONS, verifyJulesRunCapability, type JulesRunOperation } from "../services/jules-run-capability.js";
 
-const operationByType: Record<JulesCallbackEventType, JulesRunOperation> = {
+/**
+ * The callback types that can arrive over HTTP, and the operation each requires. The routes below
+ * are generated from this map, so a type can never be routable without a required operation.
+ *
+ * `handoff` is deliberately absent, and that is a fact about the transport rather than a gap to
+ * fill: a Jules session reaches Paperclip through the repository outbox, because the bearer
+ * capability these routes demand belongs to a caller the session is not. A session is created with
+ * a prompt, a source, and a branch, and has nothing to present here. Handoffs are therefore
+ * promoted by the outbox reconciler, which needs no operation grant — listing the type here would
+ * advertise a POST endpoint that no worker could ever authenticate to.
+ */
+const operationByType = {
   progress: "report_progress", blocker: "report_blocker", artifact: "report_artifact",
   proposal: "propose_workstream", approval: "request_approval", complete: "submit_completion_candidate",
-};
+} as const satisfies Partial<Record<JulesCallbackEventType, JulesRunOperation>>;
 
 function bearer(req: Request): string {
   const value = req.header("authorization") ?? "";
@@ -73,7 +84,7 @@ export function julesRoutes(db: Db) {
     return { session, claims };
   }
 
-  for (const type of ["progress", "blocker", "artifact", "proposal", "approval", "complete"] as const) {
+  for (const type of Object.keys(operationByType) as Array<keyof typeof operationByType>) {
     const path = type === "blocker" ? "blockers" : type === "artifact" ? "artifacts" : type === "proposal" ? "proposals" : type === "approval" ? "approvals" : type;
     router.post(`/jules/v1/runs/:runId/${path}`, validate(julesCallbackSchema), async (req, res) => {
       try {

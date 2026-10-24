@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { activityLog, agents, companies, companyJulesSources, companyRepositoryBindings, founderosBootstraps, goals, goalTemplateInstances, issues, projectGoals, projects, resourcePackSnapshots } from "@paperclipai/db";
+import { activityLog, agents, companies, companyJulesSources, companyMemberships, companyRepositoryBindings, founderosBootstraps, goals, goalTemplateInstances, issues, principalPermissionGrants, projectGoals, projects, resourcePackSnapshots } from "@paperclipai/db";
 import { founderOsDeploymentGoalTemplates, founderOsWorkforce, validateDeploymentCatalog, type WorkforceMember } from "./founderos-deployment-catalog.js";
 import { createResourceFoldersForWorkforce, WORKER_RESOURCE_ROOT } from "./agent-resources.js";
+import { createAgencyProfileFiles } from "./agency-profiles.js";
 
 export const FOUNDEROS_CONTEXT_VERSION = "founderos-context/v1";
 export const FOUNDEROS_CONTENT_SOURCE = "JsonLord/FounderOS-DEMO";
@@ -42,7 +43,7 @@ export function founderOsBootstrapFiles(sourceCommit: string): Record<string, st
  */
 export function missingBootstrapFiles(paths: string[], sourceCommit: string) {
   const present = new Set(paths);
-  const allFiles = { ...founderOsBootstrapFiles(sourceCommit), ...createResourceFoldersForWorkforce(founderOsWorkforce) };
+  const allFiles = { ...founderOsBootstrapFiles(sourceCommit), ...createResourceFoldersForWorkforce(founderOsWorkforce), ...createAgencyProfileFiles(founderOsWorkforce) };
   return Object.fromEntries(Object.entries(allFiles).filter(([path]) => !present.has(path)));
 }
 
@@ -64,7 +65,21 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
       const catalog = validateDeploymentCatalog();
       if (!catalog.valid) throw new Error(`FounderOS deployment catalog is invalid: ${catalog.errors.join("; ")}`);
       const [manager] = await tx.insert(agents).values({ companyId, name: "Founder Manager", role: "ceo", title: "FounderOS Founder Manager", adapterType: "hermes_local", adapterConfig: { model: process.env.FOUNDER_MANAGER_MODEL ?? "alias-large", timeoutSec: Number(process.env.FOUNDER_MANAGER_TIMEOUT_SEC ?? 900) }, status: "idle", capabilities: "result judgment, governance, prioritization", metadata: { founderosTemplateId: "founder-manager", contextVersion: FOUNDEROS_CONTEXT_VERSION } }).returning();
-      const workers = await tx.insert(agents).values(founderOsWorkforce.map((worker) => ({ companyId, name:worker.name, role:"general", title:worker.title, reportsTo:manager.id, adapterType:"jules", adapterConfig:{repository:repo.repository,source:source.accessible?source.source:"",startingBranch:repo.defaultBranch,outcomeTemplate:"bootstrap",autoApprovePlan:true,resourcePath:`${WORKER_RESOURCE_ROOT}/${worker.key}`}, status:source.accessible?"idle":"paused", pauseReason:source.accessible?null:JULES_SOURCE_PAUSE_REASON, capabilities:"firm, github, playwright, context7, linear", metadata:{ founderosTemplateId:[worker.key,...worker.roleAliases].join(","), contextVersion:FOUNDEROS_CONTEXT_VERSION, deploymentReady:source.accessible } }))).returning();
+      // A profile-backed role that has to hold a credential this deployment owns (the dashboard
+      // key, say) runs locally; a Jules session cannot be given environment variables at all, so
+      // granting it a credential would only produce an agent that reports the same wall every
+      // run. Roles that need the checkout and a PR are the opposite case and stay on Jules.
+      const workerBackend = (worker: WorkforceMember) => worker.backend ?? "jules";
+      /**
+       * Whether a role can be dispatched yet.
+       *
+       * A Jules worker is dead on arrival without a bound source — it has no repository to work
+       * in — so it is created paused, which is what the rebind service later resumes. A locally
+       * run role needs no Jules source at all: pausing it for a missing one would idle an agent
+       * that is perfectly able to work, under a pause reason that is false about it.
+       */
+      const workerReady = (worker: WorkforceMember) => workerBackend(worker) === "hermes_local" || source.accessible;
+      const workers = await tx.insert(agents).values(founderOsWorkforce.map((worker) => ({ companyId, name:worker.name, role:"general", title:worker.title, reportsTo:manager.id, adapterType:workerBackend(worker), adapterConfig:{repository:repo.repository,source:source.accessible?source.source:"",startingBranch:repo.defaultBranch,outcomeTemplate:"bootstrap",autoApprovePlan:true,resourcePath:`${WORKER_RESOURCE_ROOT}/${worker.key}`,...(worker.agencyProfile?{agencyProfile:worker.agencyProfile}:{})}, status:workerReady(worker)?"idle":"paused", pauseReason:workerReady(worker)?null:JULES_SOURCE_PAUSE_REASON, capabilities:"firm, github, playwright, context7, linear", metadata:{ founderosTemplateId:[worker.key,...worker.roleAliases].join(","), contextVersion:FOUNDEROS_CONTEXT_VERSION, deploymentReady:workerReady(worker) } }))).returning();
       const [vision] = await tx.insert(goals).values({ companyId, title:`Vision — Validate and establish a viable business around ${company.name}`, description:"Establish viability through source-backed evidence; no traction, customer, revenue, or market proof is assumed.", level:"company", status:"active", ownerAgentId:manager.id }).returning();
       // Match a whole alias, not a substring. founderosTemplateId is the comma-joined
       // "key,alias,alias" string, and substring matching lets a later alias swallow an
@@ -73,6 +88,19 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
       // Researcher, whose alias actually is `research`. Every role a goal asks for today is
       // an exact alias, so this changes no existing assignment.
       const ownerFor = (role: string) => workers.find((worker) => String((worker.metadata as Record<string, unknown>)?.founderosTemplateId ?? "").split(",").includes(role)) ?? workers[0]!;
+      // Handing work to a peer is an assignment, and `tasks:assign` gates it. Granted to the
+      // manager and to locally-run roles only, and that is not conservatism: the permission is
+      // checked by the HTTP route, and a Jules worker holds no credential to present to it. The
+      // outbox path is the worker-side route instead, and it needs no grant.
+      const assignable = [manager, ...workers.filter((worker) => worker.adapterType === "hermes_local")];
+      // A grant alone does nothing. `access.hasPermission` reads an active `companyMemberships`
+      // row *first* and returns false without one, and nothing in this codebase ever created an
+      // agent membership — which is why assignment worked only for the manager, through the
+      // `role === "ceo"` legacy branch rather than through permissions. Membership is the
+      // "is this principal part of this company" check and an agent plainly is one, so insert it
+      // before the grant that depends on it.
+      await tx.insert(companyMemberships).values(assignable.map((worker) => ({ companyId, principalType: "agent" as const, principalId: worker.id, status: "active", membershipRole: "agent", createdAt: new Date(), updatedAt: new Date() }))).onConflictDoNothing();
+      await tx.insert(principalPermissionGrants).values(assignable.map((worker) => ({ companyId, principalType: "agent" as const, principalId: worker.id, permissionKey: "tasks:assign", grantedByUserId: null, createdAt: new Date(), updatedAt: new Date() }))).onConflictDoNothing();
       const children = await tx.insert(goals).values(founderOsDeploymentGoalTemplates.map((template) => ({ companyId, title:template.title, description:template.objective, parentId:vision.id, level:"objective", status:template.id==="validate-problem"?"active":"planned", ownerAgentId:ownerFor(template.recommendedOwnerRole).id, requiredSkills:template.requiredSkills, supportPacks:template.supportPacks, requiredCapabilities:template.requiredCapabilities, inputPaths:template.inputPaths, outputPaths:template.outputPaths, acceptanceCriteria:template.acceptanceCriteria, cannotCompleteIf:template.cannotCompleteIf }))).returning();
       await tx.insert(goalTemplateInstances).values(children.map((goal, index) => { const template=founderOsDeploymentGoalTemplates[index]!; return {companyId,goalId:goal.id,parentGoalId:vision.id,templateId:template.id,templateVersion:template.version,systemId:template.system,sourceRepository:options.contentSource??FOUNDEROS_CONTENT_SOURCE,sourceCommit:options.contentCommit,contractSnapshot:template as unknown as Record<string,unknown>}; })).onConflictDoNothing();
       const initialGoal = children[founderOsDeploymentGoalTemplates.findIndex((template) => template.id === "validate-problem")]!;

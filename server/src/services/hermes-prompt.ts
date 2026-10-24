@@ -122,9 +122,30 @@ for a token; you already have one.
 `;
 
 /**
- * Supply the authenticating template to a hermes_local agent that has not configured
- * one of its own. An operator's `promptTemplate` always wins.
+ * The handoff call shown to a locally-run agent. It posts to `/handoff`, not to `/issues`, and
+ * the difference is not ceremony: the handoff route records who asked and which issue they were
+ * working on, which is what lets the server refuse a request that would close a loop or has
+ * already passed through five agents. Creating the same assignment through the plain issue route
+ * succeeds and is invisible to both guards, so the fleet can deadlock through it.
+ *
+ * A template literal because the command needs both kinds of quote; escaping either inside a
+ * quoted string is how this file once stopped parsing. The adapter's `{{...}}` tokens and the
+ * shell's `$VAR`s are left untouched.
  */
+const CURL_HANDOFF = `  curl -s -X POST "{{paperclipApiUrl}}/companies/{{companyId}}/handoff" \\
+    -H "Authorization: Bearer $PAPERCLIP_API_KEY" -H "X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID" \\
+    -H "content-type: application/json" \\
+    -d '{"toRole":"<ask key below>","title":"<one deliverable>","need":"<what to produce and where to put it>","fromIssueId":"<the issue you are working on, if any>"}'`;
+
+
+export interface HermesPromptPeer {
+  name: string;
+  askKey: string;
+  title?: string;
+  available?: boolean;
+  note?: string;
+}
+
 export interface HermesPromptOptions {
   /**
    * The Founder Manager gets the reporting contract instead of the generic one. Decided by
@@ -134,6 +155,21 @@ export interface HermesPromptOptions {
   founderManager?: boolean;
   dashboardBaseUrl?: string;
   dashboardId?: string;
+  /**
+   * A vendored persona for this agent, and the peers it may ask for part of its job. A local
+   * agent holds a Paperclip credential, so unlike a Jules worker it asks by creating an assigned
+   * issue over the API directly.
+   */
+  persona?: string | null;
+  peers?: HermesPromptPeer[];
+  /**
+   * Capabilities this agent's role declares, so the prompt can explain the ones that have a
+   * procedure worth knowing. The Founder Manager gets its own template; every other local role
+   * gets the generic one plus whichever of these it actually holds.
+   */
+  capabilities?: string[];
+  /** True when the deployment supplied the dashboard key, so the prompt can promise it exists. */
+  dashboardKeyReady?: boolean;
 }
 
 /**
@@ -151,6 +187,97 @@ function renderDashboardPlaceholders(template: string, options: HermesPromptOpti
     .replaceAll("{{dashboardPublicView}}", base && options.dashboardId ? "The public URL is " : "");
 }
 
+/**
+ * The peers section for a locally-run agent.
+ *
+ * A local agent already holds $PAPERCLIP_API_KEY and a `tasks:assign` grant, so it asks over the
+ * API directly — no outbox file, which exists for workers that cannot reach the API at all. The
+ * directory is rendered because the agent cannot list the fleet itself, and a role name it guesses
+ * may match somebody unintended.
+ */
+/** The read-the-dashboard-first probe shown to a dashboard-enabled agent. A template literal
+ * because the command needs both quote styles: nesting them inside a quoted string is what broke
+ * this file's parse twice. */
+const curlProbe = (base: string) => `  curl -s "${base}/api/dashboards" -H "Authorization: Bearer $DASHBOARD_API_KEY" | python3 -m json.tool`;
+
+/**
+ * The dashboard procedure for a locally-run agent that holds the capability.
+ *
+ * The Founder Manager has this baked into its own template. Any other reporting role — the Data
+ * Presentationalist, which the founder calls on for dashboard updates and for the visual halves
+ * of the business plan — runs on the generic template and would otherwise learn only that a
+ * "Agent Dashboards" capability exists, with no shapes. Each rule below was confirmed against the
+ * Space before it was written, because the failure modes are silent: a `text` widget renders in a
+ * plain `<div>`, so a bullet list with newlines arrives as one run-on sentence and looks like the
+ * agent's own formatting error rather than a rendering constraint.
+ */
+function renderDashboardCapabilitySection(options: HermesPromptOptions): string {
+  if (!options.dashboardKeyReady) return "";
+  const base = (options.dashboardBaseUrl ?? "").replace(/\/+$/, "");
+  if (!base) return "";
+  const { cautions } = MCP_SERVERS.dashboard;
+  const lines = [
+    "",
+    "## Publishing to the Agent Dashboards space",
+    "",
+    "`$DASHBOARD_API_KEY` is set in this shell. Every `/api` route needs it; `/health` does not.",
+    "",
+    curlProbe(base),
+    "",
+    "Read the dashboard before writing it. The layout is created once by `POST /api/dashboards`",
+    "(its body must carry an \"id\"), and later changed by `PUT /api/dashboards/{id}`. Beware:",
+    "a \"widgets\" array in either call **replaces the entire layout** — send the full list, or",
+    "omit the key and leave the arrangement alone.",
+    "",
+    "Content is refreshed with `PUT /api/dashboards/{id}/data`, which shallow-merges: each key you",
+    "send is replaced whole, every key you omit is left alone. So send the section you changed,",
+    "not a reconstruction of the page.",
+    "",
+    "Finish with `POST /api/sync`. Durable backup runs once a day without it, which makes an",
+    "un-synced report a report that did not happen.",
+    "",
+    "The one layout rule that bites: **one bullet = one `table` widget row.** A `text` widget is a",
+    "plain `<div>`, so newlines collapse and your list renders as a single sentence.",
+    "",
+    "Limits:",
+    ...cautions.map((line) => `- ${line}`),
+    "",
+    `This company's daily report lives at \`${options.dashboardId ?? "the id in your task"}\`. Existing ids may be listed by the first call above — reuse one rather than minting a near-duplicate, because two dashboards for one company means the founder reads whichever one was written last.`,
+    "",
+  ];
+  return lines.join("\n");
+}
+
+function renderPeerSection(options: HermesPromptOptions): string {
+  const peers = (options.peers ?? []).filter((peer) => peer.available !== false);
+  if (!peers.length) return "";
+  const parked = (options.peers ?? []).filter((peer) => peer.available === false);
+  const lines = [
+    "",
+    "## Asking a peer for part of the job",
+    "",
+    "If part of your task belongs to another agent, ask them rather than doing their part badly.",
+    "Paperclip turns this call into an issue assigned to them and wakes them. Ask by role, not",
+    "by agent id: you are naming the job, and the server decides who is playing it.",
+    "",
+    CURL_HANDOFF,
+    "",
+    "| ask | Agent | Owns |",
+    "| --- | --- | --- |",
+  ];
+  for (const peer of peers.slice(0, 30)) lines.push(`| ${peer.askKey} | ${peer.name} | ${peer.title || "—"} |`);
+  if (parked.length) lines.push("", `Not taking work right now: ${parked.map((peer) => `${peer.name} (${peer.note || "unavailable"})`).join(", ")}.`);
+  lines.push("");
+  lines.push("- One deliverable per issue. Never ask the founder this way, and never ask the agent that asked you: a loop leaves both of you waiting. If it comes back around, report the blocker.");
+  lines.push("- Send `fromIssueId` when you were asked to do something yourself — it is how the server knows you are already inside a chain, and its only way to tell you not to hand the work back.");
+  lines.push("- Mid-run, to see who exists and who is paused: `curl -s \"{{paperclipApiUrl}}/companies/{{companyId}}/peers\" -H \"Authorization: Bearer $PAPERCLIP_API_KEY\"`.");
+  return lines.join("\n");
+}
+
+/**
+ * Supply the authenticating template to a hermes_local agent that has not configured one of its
+ * own. An operator's `promptTemplate` always wins.
+ */
 export function withHermesPromptTemplate(
   config: Record<string, unknown>,
   adapterType: string,
@@ -159,10 +286,14 @@ export function withHermesPromptTemplate(
   if (adapterType !== "hermes_local") return { config, applied: false };
   const configured = config.promptTemplate;
   if (typeof configured === "string" && configured.trim().length > 0) return { config, applied: false };
+  // Persona and peer sections are appended to whichever template is chosen. They are appended
+  // rather than interpolated because the template is a module-level constant, and per-agent text
+  // cannot be baked into it.
+  const append = [options.persona ?? "", renderDashboardCapabilitySection(options), renderPeerSection(options)].filter((part) => part.trim()).join("\n");
   if (options.founderManager) {
-    return { config: { ...config, promptTemplate: renderDashboardPlaceholders(FOUNDER_MANAGER_REPORT_TEMPLATE, options) }, applied: true };
+    return { config: { ...config, promptTemplate: renderDashboardPlaceholders(FOUNDER_MANAGER_REPORT_TEMPLATE + (append ? "\n" + append : ""), options) }, applied: true };
   }
-  return { config: { ...config, promptTemplate: HERMES_PROMPT_TEMPLATE }, applied: true };
+  return { config: { ...config, promptTemplate: renderDashboardPlaceholders(HERMES_PROMPT_TEMPLATE + (append ? "\n" + append : ""), options) }, applied: true };
 }
 
 /** Exposed for the test that asserts every example carries the auth header. */

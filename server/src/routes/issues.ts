@@ -18,7 +18,9 @@ import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
 import {
   accessService,
+  agentHandoffService,
   agentService,
+  MAX_HANDOFF_DEPTH,
   executionWorkspaceService,
   goalService,
   heartbeatService,
@@ -790,6 +792,86 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     res.status(201).json(issue);
+  });
+
+  /**
+   * Ask a peer agent for part of the job — the agent-to-agent handoff.
+   *
+   * This is an assignment wearing a different hat, so it runs through the *same* permission gate
+   * as `POST /companies/:companyId/issues` with an assignee. Two definitions of "may this
+   * principal hand work over" would drift, and whichever is looser becomes how it gets done.
+   *
+   * It is not merely a shorter call to that route, and the difference is the reason it exists.
+   * A handoff records the requesting agent and the issue being helped, so the created work is
+   * lineage-linked (`createdByAgentId`, `parentId`, `requestDepth`) — which is what lets the
+   * service refuse a request that would close a loop rather than leaving two agents politely
+   * waiting for each other forever. Creating the same issue through the plain route succeeds and
+   * is invisible to the cycle and depth guards, so the fleet can deadlock through it.
+   *
+   * The target is resolved server-side from the caller's own company: a role name cannot address
+   * an agent in another company, reach a terminated agent, or set its own depth.
+   */
+  router.post("/companies/:companyId/handoff", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const toRole = typeof body.toRole === "string" ? body.toRole.trim() : "";
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const need = typeof body.need === "string" ? body.need.trim() : "";
+    if (!toRole || !title || !need) {
+      res.status(400).json({ error: "toRole, title and need are all required" });
+      return;
+    }
+    await assertCanAssignTasks(req, companyId);
+    const actor = getActorInfo(req);
+    if (!actor.agentId) {
+      // A board user who wants to assign work has the issue route, and sees the result on the
+      // board. Handoff exists for an agent that cannot, and its guards assume a requesting
+      // agent — so refuse rather than write a row with null lineage.
+      res.status(400).json({ error: "A handoff must be requested by an agent; assign the issue directly from the board." });
+      return;
+    }
+    const textList = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 20) : undefined);
+    const result = await agentHandoffService(db).requestHandoff({
+      companyId,
+      fromAgentId: actor.agentId,
+      toRole,
+      title,
+      need,
+      acceptance: textList(body.acceptance),
+      inputs: textList(body.inputs),
+      context: typeof body.context === "string" ? body.context : undefined,
+      fromIssueId: typeof body.fromIssueId === "string" ? body.fromIssueId : null,
+      priority: ["low", "medium", "high"].includes(String(body.priority)) ? (body.priority as "low" | "medium" | "high") : undefined,
+      goalId: typeof body.goalId === "string" ? body.goalId : undefined,
+      projectId: typeof body.projectId === "string" ? body.projectId : undefined,
+    });
+    if (!result.ok) {
+      // 422 rather than 400: the request was well-formed and refused on company structure —
+      // unknown role, an ambiguous name, a paused peer, a loop — which the caller can revise.
+      res.status(422).json(result);
+      return;
+    }
+    res.status(201).json({ ...result, maxDepth: MAX_HANDOFF_DEPTH });
+  });
+
+  /**
+   * Who this agent may ask, and what to call them on.
+   *
+   * An agent has no view of the fleet, so without this its only option is to guess a role name
+   * and be told it is unknown — and a guess that happens to fit a different agent sends the work
+   * to the wrong place with no signal anywhere. Reading is gated by company membership, not by
+   * `tasks:assign`: knowing who exists is not the same as being allowed to route work to them.
+   */
+  router.get("/companies/:companyId/peers", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    if (!actor.agentId) {
+      res.status(400).json({ error: "The peer directory is for an agent; the board already has the org chart." });
+      return;
+    }
+    const peers = await agentHandoffService(db).peerDirectory(companyId, actor.agentId);
+    res.json({ peers, maxDepth: MAX_HANDOFF_DEPTH, askBy: "pass a peer's askKey or name as toRole to POST /companies/:companyId/handoff" });
   });
 
   router.patch("/issues/:id", validate(updateIssueSchema), async (req, res) => {

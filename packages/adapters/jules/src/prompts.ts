@@ -33,6 +33,15 @@ export interface McpServerGuide {
   howTo: string[];
   /** Limits that stop the agent reaching for it too early. */
   cautions: string[];
+  /**
+   * True when only a locally-run agent can use this at all.
+   *
+   * Creating a Jules session takes a prompt and a repository source and nothing else, so a
+   * remote worker cannot be given this deployment's bearer tokens. Advertising such a
+   * capability in a Jules prompt does not grant it — it produces a confident agent that
+   * reports an impassable wall, run after run. Remote dispatch omits these entirely.
+   */
+  localOnly?: boolean;
 }
 
 export const MCP_SERVERS: Record<string, McpServerGuide> = {
@@ -131,6 +140,28 @@ export const MCP_SERVERS: Record<string, McpServerGuide> = {
       "Never a source of truth for a business fact; company state stays in GitHub and `firm/`.",
     ],
   },
+  /**
+   * The Agent Dashboards service. Listed here rather than in a separate table so a role's
+   * grant, its resource guide, and the manager's routing view all come from one place, even
+   * though it is an HTTP API reached with curl rather than an MCP server in the transport
+   * sense. `localOnly` is what makes that honest.
+   */
+  dashboard: {
+    name: "Agent Dashboards",
+    use: "publishing what the company did and what its metrics say, as dashboards the founder reads",
+    goals: ["observe-product-usage", "compile-business-plan", "compile-pitch"],
+    localOnly: true,
+    howTo: [
+      "Read the dashboard before writing it: GET /api/dashboards/{id} with the bearer key already in your shell.",
+      "Create the layout once with POST /api/dashboards (the body must include \"id\"), then refresh content with PUT /api/dashboards/{id}/data. A data PUT replaces each key you send whole and leaves every other key untouched.",
+      "Bullets are table widgets, one row each. A text widget renders inside a plain <div>, so newlines collapse in the browser and a list becomes one run-on sentence.",
+      "Finish with POST /api/sync. Durable backup otherwise runs once a day, and an unsynced report is a report that did not happen.",
+    ],
+    cautions: [
+      "Only a locally-run agent holds the key. If you are reading this in a remote session you have no credential: say the update needs the reporting agent instead of trying and failing.",
+      "A dashboard is a claim to the founder. Every figure needs its denominator and every unverified line says it is unverified.",
+    ],
+  },
 };
 
 /** Capability token -> guide, falling back to a bare mention for an unknown token. */
@@ -171,6 +202,23 @@ export interface JulesSessionSpec {
    * root so the worker can read it without guessing at a layout.
    */
   resourcePath?: string;
+  /**
+   * A rendered persona section, supplied by the server because the persona files live in this
+   * deployment's resources and a remote worker has no way to read them.
+   *
+   * It arrives as finished markdown rather than as a key to look up: the adapter must not know
+   * where personas are stored, and a worker must not be able to name an arbitrary file to have
+   * its contents pasted into its own prompt.
+   */
+  persona?: string;
+  /**
+   * Asking a peer for part of the job: who to ask, and where to leave the request.
+   *
+   * The roster is rendered in rather than fetched, because a Jules worker holds no Paperclip
+   * credential and cannot call a peers endpoint. Telling it to discover the fleet it is
+   * allowed to address would produce guessed role names and rejected requests.
+   */
+  handoff?: { outboxDir: string; askFirst: string[]; peers: Array<{ askKey: string; name: string; title?: string; available?: boolean; note?: string }> };
   support?: {
     skills: string[];
     packs: Array<{ id: string; version: string; purpose: string; readPaths: string[]; sourceGuidance?: string; qualityGates: string[] }>;
@@ -219,7 +267,78 @@ const bullets = (items: string[]) => items.length ? items.map((item) => `- ${ite
  * reason: an earlier build that treated it as a requirement denied dispatches over tooling
  * the outcome never needed. Listing the grant plus the guide path keeps the nudge advisory.
  */
+/**
+ * The handoff section: how to ask a peer, and who is addressable.
+ *
+ * A handoff is left as a file under `.founderos/outbox/<runId>/`, not POSTed. That is not a
+ * shortcut — a Jules session runs on Google's infrastructure with no Paperclip bearer token, so
+ * an HTTP ask would fail on every attempt, while a repository write is the one capability it
+ * definitely has. The outbox reconciler promotes the file into a native Paperclip issue assigned
+ * to the peer, which then wakes, so the peer never learns or cares how the request travelled.
+ */
+function renderHandoffSection(spec: JulesSessionSpec): string {
+  const peers = spec.handoff!.peers.filter((peer) => peer.available !== false);
+  const lines = [
+    "## Asking a peer for part of the job",
+    "",
+    "Some of this outcome may belong to another agent. Ask them instead of doing their part badly,",
+    "and never invent the part you needed them for.",
+    "",
+    "Write one file per request into `" + spec.handoff!.outboxDir + "`:",
+    "",
+    "```json",
+    "{",
+    '  "version": "founderos.outbox/v1",',
+    '  "eventId": "' + spec.paperclip.runId + ':handoff:<what-you-need>",',
+    '  "runId": "' + spec.paperclip.runId + '",',
+    '  "type": "handoff",',
+    '  "payload": {',
+    '    "toRole": "<askKey below>",',
+    '    "title": "<one deliverable, as an issue title>",',
+    '    "need": "<what to produce, and where to put it>",',
+    '    "inputs": ["<path they should read>"],',
+    '    "acceptance": ["<how they know it is done>"]',
+    "  }",
+    "}",
+    "```",
+    "",
+    "Paperclip turns that file into an issue assigned to them and wakes them. Leave `sessionId`",
+    "out: Paperclip fills it, and a value you guessed would be rejected as a forged binding.",
+    "",
+    "Ask first: " + (spec.handoff!.askFirst.length ? spec.handoff!.askFirst.join(", ") : "whoever below owns the part") + ".",
+    "",
+    "| askKey | Agent | Owns |",
+    "| --- | --- | --- |",
+  ];
+  for (const peer of peers.slice(0, 24)) {
+    lines.push(`| \`${peer.askKey}\` | ${peer.name} | ${peer.title || "—"} |`);
+  }
+  const parked = spec.handoff!.peers.filter((peer) => peer.available === false);
+  if (parked.length) {
+    lines.push("");
+    lines.push(`Not taking work right now: ${parked.map((peer) => `${peer.name} (${peer.note || "unavailable"})`).join(", ")}.`);
+  }
+  if (!peers.length) {
+    // A heading with no rows reads as a truncated prompt, and the worker then asks a name it
+    // invented. Say plainly that nobody is reachable, so the honest move is to report the part
+    // you cannot finish rather than to guess a colleague.
+    lines.splice(lines.indexOf("| askKey | Agent | Owns |"), 2);
+    lines.push("No peer is reachable from this run right now. Report the part you cannot finish as a blocker; do not invent a role to ask.");
+  }
+  lines.push("");
+  lines.push("Rules that exist because the alternative is a fleet that deadlocks politely:");
+  lines.push("- One deliverable per request file. Two asks in one issue means half of it gets done and reported as the whole thing.");
+  lines.push("- `eventId` must be unique per request and stable if you rewrite the file: it is what stops a duplicate ask. Reuse it only for the same ask.");
+  lines.push("- Do not ask the founder, and do not ask the agent that asked you — a loop leaves both of you waiting. If the chain comes back around, report the blocker.");
+  lines.push("- When you finish work someone asked you for, comment on *your* issue and mention the requester. Closing their issue for them removes the step where they check it.");
+  lines.push("");
+  return lines.join("\n") + "\n\n";
+}
+
 function renderToolSection(spec: JulesSessionSpec): string {
+  // A capability the worker cannot physically use is worse than an absent one: it invites an
+  // attempt, a failure, and a blocker report that reads as an infrastructure problem.
+  const usable = spec.capabilities.filter((capability: string) => !MCP_SERVERS[capability]?.localOnly);
   // Only name a guide the bootstrap actually wrote. A pointer at a file that is not there
   // teaches the worker that references in its prompt are unreliable, which costs more than
   // the guidance is worth.
@@ -227,14 +346,19 @@ function renderToolSection(spec: JulesSessionSpec): string {
   const pointer = guidePath
     ? `Read \`${guidePath}\` before starting: it gives the procedure and the limits for each server above.`
     : null;
-  if (!spec.capabilities.length) {
+  if (!usable.length) {
     return [
+      // Both phrasings are load-bearing for a different reader: `agent-resources.test.ts`
+      // guards that a role with no servers is told so plainly, and `assignment-prompt.test.ts`
+      // guards that the fallback never names `firm` as a capability it cannot install. Say it
+      // once, in a sentence that satisfies both, rather than picking a winner per commit.
       "No MCP server is declared for this outcome; work from the repository and the public web.",
+      "Required capabilities: none beyond the repository itself.",
       "Name a server as a blocker only if the outcome genuinely cannot be produced without it.",
       ...(pointer ? [pointer] : []),
     ].join(" ");
   }
-  const servers = spec.capabilities.map((capability: string) => {
+  const servers = usable.map((capability: string) => {
     const guide = mcpGuide(capability);
     return `- **${guide.name}** (\`${capability}\`) — ${guide.use}.`;
   });
@@ -302,7 +426,7 @@ matches the artifact you are producing and follow its structure. If the folder i
 and work from the goal contract alone; do not invent a format and present it as the company's.
 ` : ""}
 
-## Required outputs
+${spec.handoff ? renderHandoffSection(spec) : ""}## Required outputs
 ${bullets(spec.requiredOutputs)}
 
 ## Acceptance criteria
@@ -334,7 +458,7 @@ Include what cuts against the thesis. A landscape in which every fact supports t
 ## Tools and deployment
 ${renderToolSection(spec)}
 
-## Goal-specific support
+${spec.persona ? spec.persona + "\n\n" : ""}## Goal-specific support
 Required reasoning skills: ${spec.support?.skills.length ? spec.support.skills.join(", ") : "None"}.
 ${spec.support?.packs.length ? spec.support.packs.map((pack) => `### ${pack.id}@${pack.version}\n${pack.purpose}\nRead before beginning:\n${bullets(pack.readPaths.map((path) => `\`${path}\``))}\n${pack.sourceGuidance ? `Source guidance: ${pack.sourceGuidance}\n` : ""}Quality gates:\n${bullets(pack.qualityGates)}`).join("\n\n") : "No support packs attached."}
 ${spec.support?.missingRequiredPacks.length ? `STOP: required support packs are unavailable: ${spec.support.missingRequiredPacks.join(", ")}. Report a blocker; do not proceed.` : "All required support packs are resolved."}

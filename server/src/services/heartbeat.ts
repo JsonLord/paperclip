@@ -29,6 +29,9 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, DASHBOARD_API_KEY_ENV, withAgentApiKey, withDashboardApiKey, withAgentGithubToken } from "./agent-token-env.js";
 import { withHermesPromptTemplate } from "./hermes-prompt.js";
 import { dailyDashboardId, dashboardBaseUrl, isFounderManager } from "./founder-manager-reporting.js";
+import { workforceEntryForTemplateId } from "./founderos-deployment-catalog.js";
+import { renderAgencyProfileSection } from "./agency-profiles.js";
+import { agentHandoffService } from "./agent-handoff.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -2235,26 +2238,39 @@ export function heartbeatService(db: Db) {
         resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
         secretKeys.add(AGENT_API_KEY_ENV);
       }
-      // Reporting is the Founder Manager's only job, so its credentials are decided per
-      // agent rather than per adapter: it gets the dashboard key and not the repository
-      // write grant, and every other local worker keeps the repository grant and does not
-      // get the dashboard key. A prompt that says "you have one tool" while the shell holds
-      // a repo-writing token is a suggestion, not a boundary.
+      // Credentials are decided per agent, not per adapter. A prompt that says "you have one
+      // tool" while the shell holds a repository-writing token is a suggestion, not a boundary,
+      // so the Founder Manager gets the dashboard key and no repo token, and the reverse holds
+      // for a worker that writes code. The rule is the role's declared capability rather than a
+      // name check, so adding a second reporting role changes the catalog and not this file.
       const founderManager = agent.adapterType === "hermes_local" && isFounderManager(agent.metadata);
+      const workforceEntry = workforceEntryForTemplateId((agent.metadata as Record<string, unknown> | null)?.founderosTemplateId);
+      // A capability is only grantable on an adapter that can physically use it: a Jules session
+      // is created with a prompt and a branch, with no way to hand it an environment variable,
+      // so the same `dashboard` token means "ask the reporting agent" over there and is refused
+      // out of its prompt entirely (see `localOnly` in the adapter's server registry).
+      const grantsDashboard = agent.adapterType === "hermes_local" && (founderManager || Boolean(workforceEntry?.mcp.includes("dashboard")));
+      // Only the Founder Manager is denied the repository token, and that is a decision about
+      // the role rather than about the credential: it reports on work and must not perform it.
+      // Every other local role is a worker that produces files, including the reporting roles —
+      // the Data Presentationalist publishes dashboards *and* writes the document visuals into
+      // the company repository, so it holds both keys. Refusing it the repo token on the grounds
+      // that it is dashboard-enabled would strand half its job.
+      const grantsRepositoryWrite = agent.adapterType === "hermes_local" && !founderManager;
 
       // Hermes runs in the container and, unlike a Jules worker, is not already inside
       // the company repository — so to write to it, it needs a GitHub token in its
       // shell and reaches the repo through the REST API with curl. The grant is narrow
       // by adapter: only hermes_local receives it, and a deployment-scoped token is
       // preferred over the broad one. It is injected at runtime and never persisted.
-      if (agent.adapterType === "hermes_local" && !founderManager) {
+      if (grantsRepositoryWrite) {
         const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
         if (githubToken) {
           resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
           secretKeys.add(AGENT_GITHUB_TOKEN_ENV);
         }
       }
-      if (founderManager) {
+      if (grantsDashboard) {
         const dashboardKey = process.env.DASHBOARD_API_KEY?.trim() || null;
         if (dashboardKey) {
           resolvedConfig = withDashboardApiKey(resolvedConfig, dashboardKey).config;
@@ -2262,13 +2278,28 @@ export function heartbeatService(db: Db) {
         } else {
           // Without the key every call answers 401, and the agent would report a wall it could
           // not get past. Say so at the source instead of letting it discover it per run.
-          logger.warn({ agentId: agent.id }, "founder manager is reporting-enabled but DASHBOARD_API_KEY is unset; dashboard calls will fail with 401");
+          logger.warn({ agentId: agent.id }, "agent is dashboard-enabled but DASHBOARD_API_KEY is unset; dashboard calls will fail with 401");
         }
       }
+      // Who this agent may ask for a piece of its job, and what its persona says. Resolved here
+      // rather than by the agent: a worker holds no Paperclip credential and cannot list the
+      // fleet, so telling it to discover its peers would only produce guessed role names and
+      // refused requests. The directory is read once per run for the agent that needs it.
+      const needsPeerDirectory = agent.adapterType === "hermes_local" || agent.adapterType === "jules";
+      const peers = needsPeerDirectory ? await agentHandoffService(db).peerDirectory(agent.companyId, agent.id) : [];
+
       resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType, {
         founderManager,
         dashboardBaseUrl: dashboardBaseUrl(),
         dashboardId: dailyDashboardId(agent.companyId),
+        persona: workforceEntry?.agencyProfile ? renderAgencyProfileSection(workforceEntry.agencyProfile) : null,
+        peers,
+        capabilities: workforceEntry?.mcp ? [...workforceEntry.mcp] : [],
+        // The Founder Manager's own template already carries the dashboard procedure; this
+        // section is for the *other* roles that hold the key, and only when the deployment
+        // actually gave them one — describing a credential they lack would send them probing
+        // for a wall.
+        dashboardKeyReady: grantsDashboard && !founderManager && Boolean(process.env.DASHBOARD_API_KEY?.trim()),
       }).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
@@ -2284,8 +2315,15 @@ export function heartbeatService(db: Db) {
           priority: parseObject(context.julesPriority),
         });
         if (julesAdmission.kind === "ADMITTED") {
+          // Persona text is rendered on this side and passed through, because the persona files
+          // live in this deployment's resources and a remote session can neither read them nor
+          // be trusted to name a file to be inlined into its own prompt.
+          const persona = workforceEntry?.agencyProfile ? renderAgencyProfileSection(workforceEntry.agencyProfile) : null;
           resolvedConfig = {
             ...resolvedConfig,
+            ...(persona ? { persona } : {}),
+            ...(workforceEntry?.askFirst ? { askFirst: [...workforceEntry.askFirst] } : {}),
+            peers,
             source: julesAdmission.source,
             repository: julesAdmission.repository,
             startingBranch: julesAdmission.startingBranch,

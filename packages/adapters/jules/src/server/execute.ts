@@ -60,6 +60,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     objective: asString(ctx.config.objective, outcomeTemplate.objective), inputs: unique(Array.isArray(ctx.config.inputs) ? ctx.config.inputs.filter((item): item is string => typeof item === "string") : [], supportStrings("inputPaths")),
     requiredOutputs: unique([...outcomeTemplate.requiredOutputs], supportStrings("outputPaths")), acceptanceCriteria: unique([...outcomeTemplate.acceptanceCriteria], supportStrings("acceptanceCriteria")), cannotCompleteIf: unique([...outcomeTemplate.cannotCompleteIf], supportStrings("cannotCompleteIf")),
     externalActions: "APPROVAL_REQUIRED", assignment, managerNotes: asString(ctx.config.managerNotes, ""), resourcePath: asString(ctx.config.resourcePath, "").trim() || undefined,
+    persona: asString(ctx.config.persona, "").trim() || undefined,
+    handoff: {
+      outboxDir: `.founderos/outbox/${ctx.runId}`,
+      askFirst: Array.isArray(ctx.config.askFirst) ? ctx.config.askFirst.filter((item: unknown): item is string => typeof item === "string") : [],
+      peers: Array.isArray(ctx.config.peers) ? (ctx.config.peers as Array<{ askKey: string; name: string; title?: string; available?: boolean; note?: string }>) : [],
+    },
     support: {
       skills: supportStrings("skills"),
       packs: supportPacks,

@@ -4,11 +4,14 @@ import { companyJulesSources, julesSessions } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { julesCallbackService, type JulesCallbackEventType } from "./jules-callbacks.js";
 
-const OUTBOX_TYPES: Record<string, JulesCallbackEventType> = { progress: "progress", blocker: "blocker", artifact: "artifact", proposal: "proposal", approval: "approval", complete: "complete" };
+// `handoff` is a worker asking a peer agent for part of its job. It is promoted like the others,
+// and it is here because a Jules session has no Paperclip credential: a repository file is the
+// one channel it can always write, and this reconciler is the side that can create an issue.
+const OUTBOX_TYPES: Record<string, JulesCallbackEventType> = { progress: "progress", blocker: "blocker", artifact: "artifact", proposal: "proposal", approval: "approval", complete: "complete", handoff: "handoff" };
 const OUTBOX_SESSION_STATES = ["QUEUED", "PLANNING", "AWAITING_PLAN_APPROVAL", "AWAITING_USER_FEEDBACK", "IN_PROGRESS", "PAUSED", "REVISION_REQUESTED"];
 
 export interface FounderOsOutboxEvent {
-  version: "founderos.outbox/v1"; eventId: string; runId: string; sessionId: string;
+  version: "founderos.outbox/v1"; eventId: string; runId: string; sessionId?: string;
   type: keyof typeof OUTBOX_TYPES; payload: Record<string, unknown>;
 }
 
@@ -16,7 +19,15 @@ export function validateOutboxEvent(value: unknown, session: typeof julesSession
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Malformed FounderOS outbox event");
   const event = value as Partial<FounderOsOutboxEvent>;
   if (event.version !== "founderos.outbox/v1" || typeof event.eventId !== "string" || !event.eventId || typeof event.payload !== "object" || !event.payload || Array.isArray(event.payload) || !event.type || !OUTBOX_TYPES[event.type]) throw new Error("Malformed FounderOS outbox event");
-  if (event.runId !== session.paperclipRunId || event.sessionId !== session.julesSessionId) throw new Error("Outbox event does not match bound run/session namespace");
+  // `runId` is the binding, and it is not a weak one: the file is read out of
+  // `.founderos/outbox/<runId>/` and the session is then looked up by that run, so a file claiming
+  // somebody else's run is refused before its payload is trusted, and no session id can retarget
+  // it. `sessionId` is now optional rather than required because the writer cannot know it —
+  // `julesSessionId` is the remote id Jules returns *after* creating the session, and the dispatch
+  // prompt is an input to that creation, so no prompt can name the id its own session will get.
+  // When a caller does supply one it is still checked, and a wrong one is still rejected.
+  if (event.runId !== session.paperclipRunId) throw new Error("Outbox event does not match bound run namespace");
+  if (event.sessionId != null && event.sessionId !== "" && event.sessionId !== session.julesSessionId) throw new Error("Outbox sessionId contradicts bound run/session namespace");
   for (const key of ["companyId", "agentId", "goalId", "projectId", "issueId"] as const) {
     const expected = key === "companyId" ? session.companyId : key === "agentId" ? session.agentId : key === "goalId" ? session.goalId : key === "projectId" ? session.projectId : session.issueId;
     if (event.payload[key] != null && event.payload[key] !== expected) throw new Error(`Outbox ${key} contradicts persisted binding`);
