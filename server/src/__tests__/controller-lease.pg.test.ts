@@ -68,10 +68,16 @@ suite("controller-lease single-controller fencing (real PostgreSQL)", () => {
     await svc.acquireLease({ companyId, controllerId: "A", leaseTtlMs: 5_000, now: base });
     const later = new Date(base.getTime() + 60_000);
     await svc.acquireLease({ companyId, controllerId: "B", now: later });
-    // A resumes with stale token 1 after B took ownership -> must be refused.
+    // A resumes with stale token 1 after B took ownership. The row's token is
+    // now 2, so token 1 matches no row: rejection code is STALE_FENCING_TOKEN.
+    // NOT_LEASE_HOLDER is the distinct case where the token exists but a
+    // different controller currently owns it.
     const stale = await svc.verifyLease({ companyId, controllerId: "A", fencingToken: 1, now: later });
     expect(stale.ok).toBe(false);
-    if (!stale.ok) expect(stale.code).toBe("NOT_LEASE_HOLDER");
+    if (!stale.ok) expect(stale.code).toBe("STALE_FENCING_TOKEN");
+    const wrongHolder = await svc.verifyLease({ companyId, controllerId: "C", fencingToken: 2, now: later });
+    expect(wrongHolder.ok).toBe(false);
+    if (!wrongHolder.ok) expect(wrongHolder.code).toBe("NOT_LEASE_HOLDER");
     const fresh = await svc.verifyLease({ companyId, controllerId: "B", fencingToken: 2, now: later });
     expect(fresh.ok).toBe(true);
   });
@@ -111,7 +117,9 @@ suite("controller-lease single-controller fencing (real PostgreSQL)", () => {
   });
 
   it("cleanup: removes test lease rows", async () => {
-    await db.delete(controllerLeases).where(controllerLeases.companyId.isNotNull());
-    await db.delete(companies).where(companies.name.like("lease-%"));
+    // Dedicated scratch database: unconditional deletes are safe and avoid
+    // version-dependent column helpers (companies delete cascades to leases).
+    await db.delete(controllerLeases);
+    await db.delete(companies);
   });
 });
