@@ -26,8 +26,9 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
-import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, withAgentApiKey, withAgentGithubToken } from "./agent-token-env.js";
+import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, DASHBOARD_API_KEY_ENV, withAgentApiKey, withDashboardApiKey, withAgentGithubToken } from "./agent-token-env.js";
 import { withHermesPromptTemplate } from "./hermes-prompt.js";
+import { dailyDashboardId, dashboardBaseUrl, isFounderManager } from "./founder-manager-reporting.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -2234,19 +2235,41 @@ export function heartbeatService(db: Db) {
         resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
         secretKeys.add(AGENT_API_KEY_ENV);
       }
+      // Reporting is the Founder Manager's only job, so its credentials are decided per
+      // agent rather than per adapter: it gets the dashboard key and not the repository
+      // write grant, and every other local worker keeps the repository grant and does not
+      // get the dashboard key. A prompt that says "you have one tool" while the shell holds
+      // a repo-writing token is a suggestion, not a boundary.
+      const founderManager = agent.adapterType === "hermes_local" && isFounderManager(agent.metadata);
+
       // Hermes runs in the container and, unlike a Jules worker, is not already inside
       // the company repository — so to write to it, it needs a GitHub token in its
       // shell and reaches the repo through the REST API with curl. The grant is narrow
       // by adapter: only hermes_local receives it, and a deployment-scoped token is
       // preferred over the broad one. It is injected at runtime and never persisted.
-      if (agent.adapterType === "hermes_local") {
+      if (agent.adapterType === "hermes_local" && !founderManager) {
         const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
         if (githubToken) {
           resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
           secretKeys.add(AGENT_GITHUB_TOKEN_ENV);
         }
       }
-      resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType).config;
+      if (founderManager) {
+        const dashboardKey = process.env.DASHBOARD_API_KEY?.trim() || null;
+        if (dashboardKey) {
+          resolvedConfig = withDashboardApiKey(resolvedConfig, dashboardKey).config;
+          secretKeys.add(DASHBOARD_API_KEY_ENV);
+        } else {
+          // Without the key every call answers 401, and the agent would report a wall it could
+          // not get past. Say so at the source instead of letting it discover it per run.
+          logger.warn({ agentId: agent.id }, "founder manager is reporting-enabled but DASHBOARD_API_KEY is unset; dashboard calls will fail with 401");
+        }
+      }
+      resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType, {
+        founderManager,
+        dashboardBaseUrl: dashboardBaseUrl(),
+        dashboardId: dailyDashboardId(agent.companyId),
+      }).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);

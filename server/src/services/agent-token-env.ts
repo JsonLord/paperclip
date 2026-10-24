@@ -54,3 +54,29 @@ export function withAgentGithubToken(
   if (typeof configured === "string" && configured.trim().length > 0) return { config, injected: false };
   return { config: { ...config, env: { ...env, [AGENT_GITHUB_TOKEN_ENV]: token.trim() } }, injected: true };
 }
+
+/** The variable a locally-run agent reads the dashboard service bearer token from. */
+export const DASHBOARD_API_KEY_ENV = "DASHBOARD_API_KEY";
+
+/**
+ * Carry the dashboard service key into a local agent's shell.
+ *
+ * The Founder Manager reports daily activity by creating and updating dashboards over the
+ * Agent Dashboards REST API, which answers every `/api` route with 401 unless a bearer token
+ * matches the Space's `AGENT_KEY`. Like the GitHub grant, the value is resolved from the
+ * deployment at runtime and injected into the adapter config, so it never enters a prompt,
+ * the database, or a commit. An explicitly configured value wins.
+ *
+ * Deliberately not granted to Jules workers: they run outside this deployment and the Space
+ * key is a single shared credential. Reporting stays with the manager.
+ */
+export function withDashboardApiKey(
+  config: Record<string, unknown>,
+  key: string | null | undefined,
+): { config: Record<string, unknown>; injected: boolean } {
+  if (!key || !key.trim()) return { config, injected: false };
+  const env = parseObject(config.env);
+  const configured = env[DASHBOARD_API_KEY_ENV];
+  if (typeof configured === "string" && configured.trim().length > 0) return { config, injected: false };
+  return { config: { ...config, env: { ...env, [DASHBOARD_API_KEY_ENV]: key.trim() } }, injected: true };
+}

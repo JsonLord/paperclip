@@ -12,6 +12,7 @@
  * must stay as shell variables so no token is ever written into the prompt.
  */
 import { MCP_SERVERS } from "@paperclipai/adapter-jules";
+import { FOUNDER_MANAGER_REPORT_TEMPLATE } from "./founder-manager-reporting.js";
 
 /**
  * The manager's MCP section, generated from the same registry the Jules dispatch prompt and
@@ -124,13 +125,43 @@ for a token; you already have one.
  * Supply the authenticating template to a hermes_local agent that has not configured
  * one of its own. An operator's `promptTemplate` always wins.
  */
+export interface HermesPromptOptions {
+  /**
+   * The Founder Manager gets the reporting contract instead of the generic one. Decided by
+   * the caller from agent metadata, not by adapter type: every FounderOS worker that runs
+   * locally would otherwise be told to publish dashboards.
+   */
+  founderManager?: boolean;
+  dashboardBaseUrl?: string;
+  dashboardId?: string;
+}
+
+/**
+ * Fill the template's Paperclip-side placeholders without touching the adapter's.
+ *
+ * The adapter renders `{{agentName}}`, `{{taskId}}` and friends and leaves what it does not
+ * know as literal text, so a dashboard URL left as a placeholder would reach the agent as
+ * braces. Substituting ours first keeps both sets working.
+ */
+function renderDashboardPlaceholders(template: string, options: HermesPromptOptions): string {
+  const base = (options.dashboardBaseUrl ?? "").replace(/\/+$/, "");
+  return template
+    .replaceAll("{{dashboardBaseUrl}}", base)
+    .replaceAll("{{dashboardId}}", options.dashboardId ?? "")
+    .replaceAll("{{dashboardPublicView}}", base && options.dashboardId ? "The public URL is " : "");
+}
+
 export function withHermesPromptTemplate(
   config: Record<string, unknown>,
   adapterType: string,
+  options: HermesPromptOptions = {},
 ): { config: Record<string, unknown>; applied: boolean } {
   if (adapterType !== "hermes_local") return { config, applied: false };
   const configured = config.promptTemplate;
   if (typeof configured === "string" && configured.trim().length > 0) return { config, applied: false };
+  if (options.founderManager) {
+    return { config: { ...config, promptTemplate: renderDashboardPlaceholders(FOUNDER_MANAGER_REPORT_TEMPLATE, options) }, applied: true };
+  }
   return { config: { ...config, promptTemplate: HERMES_PROMPT_TEMPLATE }, applied: true };
 }
 
