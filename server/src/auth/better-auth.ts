@@ -91,6 +91,12 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },
+    socialProviders: {
+      github: {
+        clientId: process.env.GITHUB_CLIENT_ID ?? "",
+        clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+      },
+    },
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
 
