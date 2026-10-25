@@ -468,3 +468,4 @@ log "paperclip exited — stopping sidecars + postgres"
 [ -n "$HERMES_DASHBOARD_PID" ] && kill "$HERMES_DASHBOARD_PID" 2>/dev/null
 [ -n "$PG_STARTED" ] && pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1
 exit 0
+
