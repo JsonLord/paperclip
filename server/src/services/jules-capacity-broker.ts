@@ -145,6 +145,25 @@ function strings(value: unknown): string[] {
  */
 const NEVER_REQUIRED_OF_JULES = new Set(["firm"]);
 
+/**
+ * Per-company Jules credential allowlist, expressed as environment
+ * (`companyId=1,2,3;other=2`) so it survives the space's every-boot DB restore
+ * and a credential rotation without any profile PATCH route (there is none). A
+ * company with no entry is unconstrained, so scoping one company never narrows
+ * another. Enforced at the broker admission boundary, not only at seeding.
+ */
+function parseAllowedIndexes(raw: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const entry of (raw ?? "").split(";")) {
+    const sep = entry.indexOf("=");
+    if (sep < 0) continue;
+    const company = entry.slice(0, sep).trim();
+    const value = entry.slice(sep + 1).trim();
+    if (company && value) out.set(company, value);
+  }
+  return out;
+}
+
 export function resolveJulesExecutionRequirements(config: Record<string, unknown>, context: Record<string, unknown>) {
   const sessionSpec = config.sessionSpec && typeof config.sessionSpec === "object" ? config.sessionSpec as Partial<JulesSessionSpec> : null;
   const templateId = typeof config.outcomeTemplate === "string" ? config.outcomeTemplate : "";
@@ -219,6 +238,22 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
       if (!mappings.length) return denial("SOURCE_ACCESS_MISSING", "No Jules profile is verified for the company source", []);
       const profileIds = mappings.map((item) => item.profileId);
       const profiles = await tx.select().from(julesProfiles).where(inArray(julesProfiles.id, profileIds));
+      // Per-company credential allowlist (env). A profile whose company secret name is
+      // not allowlisted is dropped before any capacity or credential check, so the
+      // company can never fall back to a disallowed token. No entry => unconstrained
+      // (so scoping AUX leaves Humanise and every other company byte-for-byte intact).
+      // Matched on the secret ID returned by getByName (metadata only; the secret value
+      // is never read here), which is stable across a credential rotation.
+      const allowedIndexes = parseAllowedIndexes(process.env.JULES_ALLOWED_PROFILE_INDEXES);
+      let allowedIds: Set<string> | null = null;
+      if (allowedIndexes.has(request.companyId)) {
+        const idxList = allowedIndexes.get(request.companyId)!.split(",").map((s) => s.trim()).filter(Boolean);
+        allowedIds = new Set<string>();
+        for (const idx of idxList) {
+          const sec = await secrets.getByName(request.companyId, `jules-api-${idx}`);
+          if (sec) allowedIds.add(sec.id);
+        }
+      }
       const activeLeases = await tx.select().from(julesRepositoryLeases).where(and(
         eq(julesRepositoryLeases.companyId, request.companyId),
         eq(julesRepositoryLeases.repository, source.repository),
@@ -234,6 +269,7 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
       const capacities: JulesProfileCapacity[] = [];
       const eligible: Array<{ profile: typeof julesProfiles.$inferSelect; capacity: JulesProfileCapacity; apiKey: string }> = [];
       for (const profile of profiles) {
+        if (allowedIds && !allowedIds.has(profile.secretRef)) continue;
         const windowStart = new Date(now.getTime() - profile.sessionStartWindowSec * 1000);
         const events = await tx.select().from(julesCapacityEvents).where(and(eq(julesCapacityEvents.profileId, profile.id), gte(julesCapacityEvents.occurredAt, windowStart), lte(julesCapacityEvents.occurredAt, now)));
         const sessions = await tx.select().from(julesSessions).where(and(eq(julesSessions.profileId, profile.id), inArray(julesSessions.status, ACTIVE_SESSION_STATES)));
@@ -276,6 +312,9 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
       }
 
       if (!eligible.length) {
+        if (allowedIds) {
+          return denial("NO_PROFILE_AVAILABLE", "No allowlisted Jules credential is available for this company", capacities);
+        }
         const capable = capacities.filter((item) => item.requiredCapabilitiesPresent);
         if (!capable.length) return denial("CAPABILITY_MISSING", "No source-authorized profile has every required verified capability", capacities);
         if (capable.every((item) => item.profileHealth === "auth_required")) return denial("AUTH_REQUIRED", "No eligible profile has an accessible credential", capacities);
