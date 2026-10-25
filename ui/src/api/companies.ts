@@ -37,4 +37,6 @@ export const companiesApi = {
     api.post<CompanyPortabilityPreviewResult>("/companies/import/preview", data),
   importBundle: (data: CompanyPortabilityImportRequest) =>
     api.post<CompanyPortabilityImportResult>("/companies/import", data),
+  importFounderOs: (data: { repository: string; name?: string; description?: string; ref?: string; contentCommit: string }) =>
+    api.post<{ company: Company; nativeIds: { visionGoalId: string; childGoalIds: string[]; managerAgentId: string; workerAgentIds: string[]; projectId: string; issueId: string }; readiness: string | null }>("/companies/import/github", data),
 };

@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  goals,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -25,6 +26,12 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec, UsageSummary } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
+import { AGENT_API_KEY_ENV, AGENT_GITHUB_TOKEN_ENV, DASHBOARD_API_KEY_ENV, withAgentApiKey, withDashboardApiKey, withAgentGithubToken } from "./agent-token-env.js";
+import { withHermesPromptTemplate } from "./hermes-prompt.js";
+import { dailyDashboardId, dashboardBaseUrl, isFounderManager } from "./founder-manager-reporting.js";
+import { workforceEntryForTemplateId } from "./founderos-deployment-catalog.js";
+import { renderAgencyProfileSection } from "./agency-profiles.js";
+import { agentHandoffService } from "./agent-handoff.js";
 import { costService } from "./costs.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
@@ -51,6 +58,8 @@ import {
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { goalSupportService } from "./goal-support.js";
+import { runProductivityService } from "./run-productivity.js";
+import { logActivity } from "./activity-log.js";
 import { julesSessionService } from "./jules-sessions.js";
 import { requestJulesReconciliation } from "./jules-reconciler.js";
 import { julesCapacityBroker, resolveJulesExecutionRequirements } from "./jules-capacity-broker.js";
@@ -703,6 +712,20 @@ function resolveNextSessionState(input: {
   };
 }
 
+/**
+ * Runs currently executing in THIS process, shared by every heartbeatService instance.
+ *
+ * heartbeatService is a factory, not a singleton — the scheduler in index.ts, and the
+ * routes for issues, agents, approvals, companies and costs each construct their own.
+ * While this lived inside the factory each instance had its own empty Set, so the
+ * scheduler's reaper could not see a run executing in a route's instance and declared
+ * it "Process lost" once it passed the staleness threshold. runningProcesses is
+ * module-scoped for the same reason; this has to match it.
+ *
+ * Exported so the reaper test can hold a run in flight without starting a subprocess.
+ */
+export const activeRunExecutions = new Set<string>();
+
 export function heartbeatService(db: Db) {
   const instanceSettings = instanceSettingsService(db);
 
@@ -712,9 +735,9 @@ export function heartbeatService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const goalSupport = goalSupportService(db);
+  const runProductivity = runProductivityService(db);
   const julesLifecycle = julesSessionService(db);
   const julesBroker = julesCapacityBroker(db);
-  const activeRunExecutions = new Set<string>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
   };
@@ -975,6 +998,9 @@ export function heartbeatService(db: Db) {
             projectId: issues.projectId,
             goalId: issues.goalId,
             projectWorkspaceId: issues.projectWorkspaceId,
+            title: issues.title,
+            description: issues.description,
+            priority: issues.priority,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
@@ -984,6 +1010,25 @@ export function heartbeatService(db: Db) {
     if (supportGoalId) {
       const support = await goalSupport.resolve(supportGoalId);
       if (support?.companyId === agent.companyId) context.goalSupport = support.resolution;
+    }
+    // A remote adapter has no Paperclip credential and cannot read the issue it was woken
+    // for, so the assignment has to travel with the run. Local adapters already receive it
+    // through the API; carrying it here costs one column each on a query already made.
+    if (issueProjectRef?.title) {
+      const goalRow = supportGoalId
+        ? await db
+            .select({ title: goals.title })
+            .from(goals)
+            .where(and(eq(goals.id, supportGoalId), eq(goals.companyId, agent.companyId)))
+            .then((rows) => rows[0] ?? null)
+        : null;
+      context.assignment = {
+        issueId,
+        title: issueProjectRef.title,
+        description: issueProjectRef.description ?? null,
+        priority: issueProjectRef.priority ?? null,
+        goal: goalRow?.title ?? null,
+      };
     }
     const issueProjectId = issueProjectRef?.projectId ?? null;
     const preferredProjectWorkspaceId =
@@ -2182,6 +2227,80 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      // The adapter contract is that a local-JWT adapter turns ctx.authToken into the
+      // PAPERCLIP_API_KEY the agent authenticates with, but hermes-paperclip-adapter
+      // reads only ctx.agent/ctx.runtime and its settings from ctx.agent.adapterConfig,
+      // so the token is minted and dropped and the agent reports every Paperclip call
+      // as unauthorized. Carry it in the resolved config, which is handed to the
+      // adapter as adapterConfig below, the same way a Jules admission carries
+      // JULES_API_KEY. An explicitly configured key still wins.
+      if (authToken) {
+        resolvedConfig = withAgentApiKey(resolvedConfig, authToken).config;
+        secretKeys.add(AGENT_API_KEY_ENV);
+      }
+      // Credentials are decided per agent, not per adapter. A prompt that says "you have one
+      // tool" while the shell holds a repository-writing token is a suggestion, not a boundary,
+      // so the Founder Manager gets the dashboard key and no repo token, and the reverse holds
+      // for a worker that writes code. The rule is the role's declared capability rather than a
+      // name check, so adding a second reporting role changes the catalog and not this file.
+      const founderManager = agent.adapterType === "hermes_local" && isFounderManager(agent.metadata);
+      const workforceEntry = workforceEntryForTemplateId((agent.metadata as Record<string, unknown> | null)?.founderosTemplateId);
+      // A capability is only grantable on an adapter that can physically use it: a Jules session
+      // is created with a prompt and a branch, with no way to hand it an environment variable,
+      // so the same `dashboard` token means "ask the reporting agent" over there and is refused
+      // out of its prompt entirely (see `localOnly` in the adapter's server registry).
+      const grantsDashboard = agent.adapterType === "hermes_local" && (founderManager || Boolean(workforceEntry?.mcp.includes("dashboard")));
+      // Only the Founder Manager is denied the repository token, and that is a decision about
+      // the role rather than about the credential: it reports on work and must not perform it.
+      // Every other local role is a worker that produces files, including the reporting roles —
+      // the Data Presentationalist publishes dashboards *and* writes the document visuals into
+      // the company repository, so it holds both keys. Refusing it the repo token on the grounds
+      // that it is dashboard-enabled would strand half its job.
+      const grantsRepositoryWrite = agent.adapterType === "hermes_local" && !founderManager;
+
+      // Hermes runs in the container and, unlike a Jules worker, is not already inside
+      // the company repository — so to write to it, it needs a GitHub token in its
+      // shell and reaches the repo through the REST API with curl. The grant is narrow
+      // by adapter: only hermes_local receives it, and a deployment-scoped token is
+      // preferred over the broad one. It is injected at runtime and never persisted.
+      if (grantsRepositoryWrite) {
+        const githubToken = process.env.PAPERCLIP_AGENT_GITHUB_TOKEN?.trim() || process.env.GITHUB_TOKEN?.trim() || null;
+        if (githubToken) {
+          resolvedConfig = withAgentGithubToken(resolvedConfig, githubToken).config;
+          secretKeys.add(AGENT_GITHUB_TOKEN_ENV);
+        }
+      }
+      if (grantsDashboard) {
+        const dashboardKey = process.env.DASHBOARD_API_KEY?.trim() || null;
+        if (dashboardKey) {
+          resolvedConfig = withDashboardApiKey(resolvedConfig, dashboardKey).config;
+          secretKeys.add(DASHBOARD_API_KEY_ENV);
+        } else {
+          // Without the key every call answers 401, and the agent would report a wall it could
+          // not get past. Say so at the source instead of letting it discover it per run.
+          logger.warn({ agentId: agent.id }, "agent is dashboard-enabled but DASHBOARD_API_KEY is unset; dashboard calls will fail with 401");
+        }
+      }
+      // Who this agent may ask for a piece of its job, and what its persona says. Resolved here
+      // rather than by the agent: a worker holds no Paperclip credential and cannot list the
+      // fleet, so telling it to discover its peers would only produce guessed role names and
+      // refused requests. The directory is read once per run for the agent that needs it.
+      const needsPeerDirectory = agent.adapterType === "hermes_local" || agent.adapterType === "jules";
+      const peers = needsPeerDirectory ? await agentHandoffService(db).peerDirectory(agent.companyId, agent.id) : [];
+
+      resolvedConfig = withHermesPromptTemplate(resolvedConfig, agent.adapterType, {
+        founderManager,
+        dashboardBaseUrl: dashboardBaseUrl(),
+        dashboardId: dailyDashboardId(agent.companyId),
+        persona: workforceEntry?.agencyProfile ? renderAgencyProfileSection(workforceEntry.agencyProfile) : null,
+        peers,
+        capabilities: workforceEntry?.mcp ? [...workforceEntry.mcp] : [],
+        // The Founder Manager's own template already carries the dashboard procedure; this
+        // section is for the *other* roles that hold the key, and only when the deployment
+        // actually gave them one — describing a credential they lack would send them probing
+        // for a wall.
+        dashboardKeyReady: grantsDashboard && !founderManager && Boolean(process.env.DASHBOARD_API_KEY?.trim()),
+      }).config;
       let julesAdmission: Awaited<ReturnType<typeof julesBroker.admit>> | null = null;
       if (agent.adapterType === "jules") {
         const requirements = resolveJulesExecutionRequirements(resolvedConfig, context);
@@ -2196,8 +2315,15 @@ export function heartbeatService(db: Db) {
           priority: parseObject(context.julesPriority),
         });
         if (julesAdmission.kind === "ADMITTED") {
+          // Persona text is rendered on this side and passed through, because the persona files
+          // live in this deployment's resources and a remote session can neither read them nor
+          // be trusted to name a file to be inlined into its own prompt.
+          const persona = workforceEntry?.agencyProfile ? renderAgencyProfileSection(workforceEntry.agencyProfile) : null;
           resolvedConfig = {
             ...resolvedConfig,
+            ...(persona ? { persona } : {}),
+            ...(workforceEntry?.askFirst ? { askFirst: [...workforceEntry.askFirst] } : {}),
+            peers,
             source: julesAdmission.source,
             repository: julesAdmission.repository,
             startingBranch: julesAdmission.startingBranch,
@@ -2223,7 +2349,11 @@ export function heartbeatService(db: Db) {
         try {
           adapterResult = await adapter.execute({
             runId: run.id,
-            agent,
+            // adapterConfig is what an adapter reads its settings from, and the
+            // resolved config is that same object with secret bindings replaced by
+            // their values. Handing over the raw one leaves an adapter to receive a
+            // binding object where it expects a string.
+            agent: { ...agent, adapterConfig: resolvedConfig },
             runtime: runtimeForAdapter,
             config: resolvedConfig,
             context,
@@ -2458,6 +2588,37 @@ export function heartbeatService(db: Db) {
               lastError: outcome === "succeeded" ? null : (adapterResult.errorMessage ?? "run_failed"),
             });
           }
+        }
+      }
+      // An exit code says the adapter process ended cleanly and nothing more. Record
+      // whether anything actually came of the run, so a success that left the assigned
+      // outcome untouched is visible rather than indistinguishable from real work.
+      if (outcome === "succeeded" && finalizedRun) {
+        try {
+          const productivity = await runProductivity.assess({
+            companyId: agent.companyId, agentId: agent.id, runId: finalizedRun.id,
+            issueId, startedAt: finalizedRun.startedAt ?? null,
+          });
+          if (productivity.assessed) {
+            await db.update(heartbeatRuns)
+              .set({ resultJson: { ...(finalizedRun.resultJson ?? {}), producedWork: productivity.produced, productivitySignals: productivity.signals }, updatedAt: new Date() })
+              .where(eq(heartbeatRuns.id, finalizedRun.id));
+            if (!productivity.produced) {
+              await appendRunEvent(finalizedRun, seq++, {
+                eventType: "lifecycle", stream: "system", level: "warn",
+                message: "run succeeded without producing anything for its assigned outcome",
+                payload: { issueId, producedWork: false },
+              });
+              await logActivity(db, {
+                companyId: agent.companyId, actorType: "agent", actorId: agent.id, agentId: agent.id,
+                runId: finalizedRun.id, action: "run.produced_nothing", entityType: "issue", entityId: issueId ?? finalizedRun.id,
+                details: { runId: finalizedRun.id, adapterType: agent.adapterType },
+              });
+            }
+          }
+        } catch (error) {
+          // Never let bookkeeping fail a run that genuinely completed.
+          logger.warn({ err: error, runId: finalizedRun.id }, "run productivity assessment failed");
         }
       }
       await finalizeAgentStatus(agent.id, outcome);

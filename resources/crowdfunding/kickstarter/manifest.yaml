@@ -1,0 +1,6 @@
+id: crowdfunding.kickstarter
+version: 1.0.0
+dependsOn: [content.core, gtm.campaign-core]
+reuses: [Pitch Framework, Content & Distribution, GTM Campaigns]
+externalActions: APPROVAL_REQUIRED
+platformIntegration: PLATFORM_BLOCKED

@@ -1442,15 +1442,46 @@ export function issueService(db: Db) {
         return existing;
       }),
 
+    /**
+     * Resolve @-mentions to the agents they name.
+     *
+     * The original swept out one whitespace-delimited token per `@` and compared it to agent
+     * names, which only ever worked for a single-word name: `@Document Compiler` produced the
+     * token `document`, matched nothing, and woke nobody — silently, from both the board and the
+     * agent-facing comment routes. Every FounderOS role has a multi-word name, so no agent could
+     * hand work back to the colleague that asked for it and no founder could raise one.
+     *
+     * Matching is now longest-name-first with matched spans masked out, so `@Agent Lee` resolves
+     * to "Agent Lee" and not additionally to a shorter "Lee". `\B` before the `@` and a word
+     * boundary after the name are kept: they are what stop an email address becoming a mention and
+     * stop a two-word name from matching inside a longer one.
+     */
     findMentionedAgents: async (companyId: string, body: string) => {
-      const re = /\B@([^\s@,!?.]+)/g;
-      const tokens = new Set<string>();
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(body)) !== null) tokens.add(m[1].toLowerCase());
-      if (tokens.size === 0) return [];
+      if (!body || !body.includes("@")) return [];
       const rows = await db.select({ id: agents.id, name: agents.name })
         .from(agents).where(eq(agents.companyId, companyId));
-      return rows.filter(a => tokens.has(a.name.toLowerCase())).map(a => a.id);
+      const hits: Array<{ start: number; end: number; id: string }> = [];
+      for (const agent of rows) {
+        const name = agent.name?.trim();
+        if (!name) continue;
+        const pattern = new RegExp(`\\B@${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}_-])`, "giu");
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(body)) !== null) {
+          if (match[0].length === 0) pattern.lastIndex += 1;
+          hits.push({ start: match.index, end: pattern.lastIndex, id: agent.id });
+        }
+      }
+      // Longest first, then leftmost: a shorter name contained in a longer one's mention must not
+      // also fire, or mentioning one agent wakes two.
+      hits.sort((left, right) => right.end - right.start - (left.end - left.start) || left.start - right.start);
+      const claimed: Array<[number, number]> = [];
+      const ids = new Set<string>();
+      for (const hit of hits) {
+        if (claimed.some(([from, to]) => hit.start < to && hit.end > from)) continue;
+        claimed.push([hit.start, hit.end]);
+        ids.add(hit.id);
+      }
+      return [...ids];
     },
 
     findMentionedProjectIds: async (issueId: string) => {

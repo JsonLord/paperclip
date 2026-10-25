@@ -1,6 +1,7 @@
 /// <reference path="./types/express.d.ts" />
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { startOpsApplier } from "./services/ops-applier.js";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -168,6 +169,9 @@ export async function startServer(): Promise<StartedServer> {
     return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
   }
   
+  const ADMIN_API_KEY_USER_ID = "paperclip-admin";
+  const ADMIN_API_KEY_USER_NAME = "API Admin";
+  const ADMIN_API_KEY_USER_EMAIL = "admin-api@paperclip.local";
   const LOCAL_BOARD_USER_ID = "local-board";
   const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
   const LOCAL_BOARD_USER_NAME = "Board";
@@ -228,6 +232,39 @@ export async function startServer(): Promise<StartedServer> {
     }
   }
   
+  /**
+   * Give the PAPERCLIP_ADMIN_API_KEY credential a real `user` row to stand for.
+   *
+   * The middleware resolves that bearer to a board actor, and a board actor is reported as
+   * `actorType: "user"` everywhere downstream, so writes stamp its id into columns such as
+   * `issues.created_by_user_id` — which carry a foreign key to "user". Without a row a handoff
+   * or comment made with the admin key fails on the constraint rather than succeeding.
+   *
+   * It inserts the user and deliberately NOT the `instance_admin` role. Authority on this path
+   * comes from the middleware's own check, so the row exists purely to satisfy the constraint,
+   * and the Space entrypoint counts `instance_admin` rows to decide whether to create your real
+   * board login — a row here would make that count non-zero and silently skip creating the human
+   * account, locking you out of the UI it is meant to protect.
+   */
+  async function ensureAdminApiKeyPrincipal(db: any): Promise<void> {
+    const now = new Date();
+    const existing = await db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(eq(authUsers.id, ADMIN_API_KEY_USER_ID))
+      .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+    if (existing) return;
+    await db.insert(authUsers).values({
+      id: ADMIN_API_KEY_USER_ID,
+      name: ADMIN_API_KEY_USER_NAME,
+      email: ADMIN_API_KEY_USER_EMAIL,
+      emailVerified: false,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
   let db;
   let embeddedPostgres: EmbeddedPostgresInstance | null = null;
   let embeddedPostgresStartedByThisProcess = false;
@@ -434,6 +471,9 @@ export async function startServer(): Promise<StartedServer> {
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
+  if (config.adminApiKey) {
+    await ensureAdminApiKeyPrincipal(db as any);
+  }
   if (config.deploymentMode === "authenticated") {
     const {
       createBetterAuthHandler,
@@ -490,6 +530,7 @@ export async function startServer(): Promise<StartedServer> {
     companyDeletionEnabled: config.companyDeletionEnabled,
     betterAuthHandler,
     resolveSession,
+    adminApiKey: config.adminApiKey,
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
   
@@ -525,6 +566,7 @@ export async function startServer(): Promise<StartedServer> {
     });
   
   startFirmRefreshScheduler(db as any);
+  startOpsApplier(db as any);
   startJulesReconciler(db as any);
   startJulesOutboxReconciler(db as any);
 

@@ -428,6 +428,13 @@
       "when": 1789699495499,
       "tag": "0060_lowly_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789744756768,
+      "tag": "0061_cute_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

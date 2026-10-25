@@ -18,10 +18,15 @@ describe("Jules REST adapter", () => {
   it("resumes the same remote session instead of creating a duplicate", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "remote-1", state: "IN_PROGRESS", url: "https://jules.google.com/session/remote-1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "remote-1", state: "IN_PROGRESS" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ activities: [{ id: "activity-1" }] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await execute({ runId: "run-1", agent: { id: "a", companyId: "c", name: "A", adapterType: "jules", adapterConfig: {} }, runtime: { sessionId: null, sessionParams: { julesSessionId: "remote-1" }, sessionDisplayId: null, taskKey: null }, config: { env: { JULES_API_KEY: "secret" }, source: "source", repository: "acme/co", maxWaitSec: 0 }, context: {}, onLog: async () => {} });
+    // The session is read first, then continued in place — never re-created.
     expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+    expect(String(fetchMock.mock.calls[1][0])).toContain(":sendMessage");
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(":create");
   });
   it("does not spend a Jules start when required goal support is missing", async () => {
     const fetchMock = vi.fn();

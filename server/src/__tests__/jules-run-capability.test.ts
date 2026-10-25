@@ -49,4 +49,15 @@ describe("FounderOS outbox binding", () => {
   it("rejects malformed and self-approval-shaped events", () => {
     expect(() => validateOutboxEvent({ ...valid, version: "unknown" }, session)).toThrow(/Malformed/);
   });
+  it("accepts an event that omits sessionId, since the writer cannot know it", () => {
+    // `julesSessionId` is the remote id Jules returns after creating the session, and the dispatch
+    // prompt is an input to that creation — so a prompt can never name the id its own session gets.
+    // Requiring it meant every handoff a worker wrote was malformed by construction. The run
+    // namespace is the real binding, and that is still enforced above.
+    const { sessionId, ...withoutSession } = valid;
+    expect(validateOutboxEvent(withoutSession, session)).toMatchObject({ eventId: valid.eventId });
+  });
+  it("still rejects a sessionId that contradicts the bound session", () => {
+    expect(() => validateOutboxEvent({ ...valid, sessionId: "remote-evil" }, session)).toThrow(/contradicts/);
+  });
 });

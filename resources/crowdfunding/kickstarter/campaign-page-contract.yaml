@@ -1,0 +1,4 @@
+sections: [problem, why_it_matters, learning, current_prototype, proof, why_crowdfunding, funding_enables, rewards, roadmap, risks, cta]
+claimFields: [claimId, evidenceIds, maturity, allowedLanguage, capabilityStatus, freshThrough]
+capabilityStatuses: [LIVE_PRODUCT, PROTOTYPE, MOCKUP, CONCEPT, PLANNED]
+forbid: [planned_as_current, mockup_as_live, invented_testimonial, invented_team, invented_footage]

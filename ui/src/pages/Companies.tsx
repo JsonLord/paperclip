@@ -26,6 +26,7 @@ import {
   CircleDot,
   DollarSign,
   Calendar,
+  Github,
 } from "lucide-react";
 
 export function Companies() {
@@ -49,6 +50,10 @@ export function Companies() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showFounderOsImport, setShowFounderOsImport] = useState(false);
+  const [founderOsRepository, setFounderOsRepository] = useState("");
+  const [founderOsName, setFounderOsName] = useState("");
+  const [founderOsContentCommit, setFounderOsContentCommit] = useState("");
 
   const editMutation = useMutation({
     mutationFn: ({ id, newName }: { id: string; newName: string }) =>
@@ -65,6 +70,19 @@ export function Companies() {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
       setConfirmDeleteId(null);
+    },
+  });
+
+  const founderOsImport = useMutation({
+    mutationFn: () => companiesApi.importFounderOs({ repository: founderOsRepository.trim(), name: founderOsName.trim() || undefined, contentCommit: founderOsContentCommit.trim() }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
+      setSelectedCompanyId(result.company.id);
+      setShowFounderOsImport(false);
+      setFounderOsRepository("");
+      setFounderOsName("");
+      setFounderOsContentCommit("");
     },
   });
 
@@ -89,12 +107,35 @@ export function Companies() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <Button size="sm" variant="outline" onClick={() => setShowFounderOsImport((value) => !value)}>
+          <Github className="h-3.5 w-3.5 mr-1.5" />
+          Import FounderOS
+        </Button>
         <Button size="sm" onClick={() => openOnboarding()}>
           <Plus className="h-3.5 w-3.5 mr-1.5" />
           New Company
         </Button>
       </div>
+
+      {showFounderOsImport && (
+        <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+          <div>
+            <h3 className="font-semibold">Import a FounderOS company</h3>
+            <p className="text-sm text-muted-foreground mt-1">Creates the native Vision Goal, registered Goal contracts, initial Project and Issue, Founder Manager, and Jules execution team. A configured Jules profile must have access to the repository before workers start.</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div><label className="text-xs text-muted-foreground mb-1 block">GitHub repository</label><Input value={founderOsRepository} onChange={(event) => setFounderOsRepository(event.target.value)} placeholder="owner/company" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Company name</label><Input value={founderOsName} onChange={(event) => setFounderOsName(event.target.value)} placeholder="Defaults to repository name" /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Pinned FounderOS content commit</label><Input value={founderOsContentCommit} onChange={(event) => setFounderOsContentCommit(event.target.value)} placeholder="Full commit SHA" /></div>
+          </div>
+          {founderOsImport.error && <p className="text-sm text-destructive">{founderOsImport.error.message}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowFounderOsImport(false)}>Cancel</Button>
+            <Button size="sm" disabled={!founderOsRepository.trim() || !founderOsContentCommit.trim() || founderOsImport.isPending} onClick={() => founderOsImport.mutate()}>{founderOsImport.isPending ? "Importing…" : "Import and register"}</Button>
+          </div>
+        </div>
+      )}
 
       <div className="h-6">
         {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}

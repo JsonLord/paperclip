@@ -57,6 +57,16 @@ export function boardMutationGuard(): RequestHandler {
       return;
     }
 
+    // The origin check exists to stop a hostile page from mutating the board using a
+    // victim's ambient cookie. A bearer credential is not ambient: a cross-site page
+    // cannot read it, so the attack this guard prevents does not exist on this path.
+    // Requiring a browser Origin here would instead reject every scripted call, since
+    // curl and other API clients send none.
+    if (req.actor.source === "admin_api_key") {
+      next();
+      return;
+    }
+
     if (!isTrustedBoardMutationRequest(req)) {
       res.status(403).json({ error: "Board mutation requires trusted browser origin" });
       return;

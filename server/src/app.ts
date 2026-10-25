@@ -26,6 +26,7 @@ import { businessPlanRoutes } from "./routes/business-plan.js";
 import { pitchRoutes } from "./routes/pitch.js";
 import { contentPublishingRoutes } from "./routes/content-publishing.js";
 import { contentGtmRoutes } from "./routes/content-gtm.js";
+import { crowdfundingRoutes } from "./routes/crowdfunding.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
@@ -88,6 +89,7 @@ export async function createApp(
     localPluginDir?: string;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    adminApiKey?: string;
   },
 ) {
   const app = express();
@@ -115,6 +117,7 @@ export async function createApp(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
       resolveSession: opts.resolveSession,
+      adminApiKey: opts.adminApiKey,
     }),
   );
   app.get("/api/auth/get-session", (req, res) => {
@@ -167,6 +170,7 @@ export async function createApp(
   api.use(pitchRoutes(db));
   api.use(contentPublishingRoutes(db));
   api.use(contentGtmRoutes(db));
+  api.use(crowdfundingRoutes(db));
   api.use(agentRoutes(db));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));

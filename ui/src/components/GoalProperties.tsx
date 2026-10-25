@@ -151,6 +151,40 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
 
       <Separator />
 
+      {(goal.acceptanceCriteria.length > 0 || goal.cannotCompleteIf.length > 0) && (
+        <div className="space-y-3">
+          {goal.acceptanceCriteria.length > 0 && (
+            <div>
+              <p className="text-xs font-medium mb-1.5">Acceptance criteria</p>
+              <ul className="space-y-1 text-xs text-muted-foreground list-disc pl-4">
+                {goal.acceptanceCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}
+              </ul>
+            </div>
+          )}
+          {goal.cannotCompleteIf.length > 0 && (
+            <div>
+              <p className="text-xs font-medium mb-1.5">Completion blockers</p>
+              <ul className="space-y-1 text-xs text-muted-foreground list-disc pl-4">
+                {goal.cannotCompleteIf.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(goal.requiredSkills.length > 0 || goal.requiredCapabilities.length > 0 || goal.supportPacks.length > 0) && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            {goal.requiredSkills.length > 0 && <PropertyRow label="Skills"><span className="text-xs text-muted-foreground">{goal.requiredSkills.join(", ")}</span></PropertyRow>}
+            {goal.requiredCapabilities.length > 0 && <PropertyRow label="Capabilities"><span className="text-xs text-muted-foreground">{goal.requiredCapabilities.join(", ")}</span></PropertyRow>}
+            {goal.supportPacks.length > 0 && <PropertyRow label="Support"><span className="text-xs text-muted-foreground">{goal.supportPacks.map((pack) => `${pack.id}${pack.version ? `@${pack.version}` : ""}`).join(", ")}</span></PropertyRow>}
+          </div>
+        </>
+      )}
+
+      <Separator />
+
       <div className="space-y-1">
         <PropertyRow label="Created">
           <span className="text-sm">{formatDate(goal.createdAt)}</span>
