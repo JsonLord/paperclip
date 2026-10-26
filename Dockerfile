@@ -57,6 +57,6 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-COPY --chown=node:node deploy/hf-space/overlay/deploy/start.sh /app/start.sh
+COPY --chown=node:node start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 CMD ["/app/start.sh"]
