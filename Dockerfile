@@ -21,6 +21,7 @@ COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
+COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 
 RUN pnpm install --frozen-lockfile
 
