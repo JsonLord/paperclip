@@ -1,0 +1,12 @@
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -307,6 +307,9 @@
+     checkForRootUser() {
+         return __awaiter(this, void 0, void 0, function* () {
+             if (this.isRootUser) {
++                // Auto-create postgres user when running as root (for HF Space compatibility)
++                this.options.createPostgresUser = true;
++                yield this.getUidAndGid();
+                 if (!this.options.createPostgresUser) {
+                     throw new Error('You are running this script as root. Postgres does not support running as root. If you wish to continue, configure embedded-postgres to create a Postgres user by setting the `createPostgresUser` option to true.');
+                 }
