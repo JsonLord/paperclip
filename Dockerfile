@@ -64,4 +64,4 @@ RUN pg_ctlcluster 17 main start 2>/dev/null || true \
   && usermod -aG postgres node
 
 USER node
-CMD ["sh", "-c", "pg_ctlcluster 17 main start 2>/dev/null || true; for i in $(seq 1 30); do pg_isready -q && break; sleep 1; done; export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\"; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+CMD ["sh", "-c", "pg_ctlcluster 17 main start && sleep 2 && export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\" && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
