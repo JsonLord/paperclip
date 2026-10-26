@@ -50,6 +50,7 @@ type EmbeddedPostgresInstance = {
 };
 
 type EmbeddedPostgresCtor = new (opts: {
+  createPostgresUser?: boolean;
   databaseDir: string;
   user: string;
   password: string;
