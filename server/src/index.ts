@@ -379,6 +379,7 @@ export async function startServer(): Promise<StartedServer> {
         port = detectedPort;
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
         embeddedPostgres = new EmbeddedPostgres({
+          createPostgresUser: true,
           databaseDir: dataDir,
           user: "paperclip",
           password: "paperclip",
