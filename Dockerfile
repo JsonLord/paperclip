@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -55,5 +55,8 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
+# Fix embedded postgres permissions
+RUN mkdir -p /paperclip/instances/default/db && chown -R node:node /paperclip
+
 USER node
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+CMD ["sh", "-c", "chmod -R 755 /paperclip && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
