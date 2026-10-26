@@ -1,0 +1,9 @@
+{
+  "database": {
+    "mode": "postgres",
+    "connectionString": "postgres://localhost:5432/paperclip"
+  },
+  "server": {
+    "serveUi": true
+  }
+}

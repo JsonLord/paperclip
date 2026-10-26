@@ -39,6 +39,7 @@ WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
+  && chmod 777 /paperclip/instances/default/db \
   && chown -R node:node /paperclip
 
 ENV NODE_ENV=production \
@@ -55,6 +56,5 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-COPY --chown=node:node deploy/hf-space/overlay/deploy/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-ENTRYPOINT ["/app/entrypoint.sh"]
+USER node
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
