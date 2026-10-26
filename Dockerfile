@@ -55,5 +55,8 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
+COPY --chown=node:node deploy/hf-space/overlay/deploy/ /app/deploy/
+RUN chmod +x /app/deploy/setup-db.sh
+
 USER node
-CMD ["sh", "-c", "pg_ctlcluster 17 main start 2>/dev/null || true; sleep 2; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+CMD ["sh", "-c", "/app/deploy/setup-db.sh && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
