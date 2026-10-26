@@ -55,6 +55,5 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-COPY --chown=node:node deploy/hf-space/overlay/deploy/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-ENTRYPOINT ["/app/entrypoint.sh"]
+USER node
+CMD ["sh", "-c", "rm -rf /paperclip/instances/default/db/* 2>/dev/null; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
