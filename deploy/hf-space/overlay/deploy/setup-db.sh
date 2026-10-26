@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+# Add postgres binaries to PATH
+export PATH="/usr/lib/postgresql/17/bin:$PATH"
+
 # Check if DATABASE_URL is set
 if [ -z "$DATABASE_URL" ]; then
     echo "WARNING: DATABASE_URL not set. Trying to use embedded PostgreSQL..."
@@ -32,6 +35,8 @@ if [ -z "$DATABASE_URL" ]; then
     # Set DATABASE_URL
     export DATABASE_URL="postgres://paperclip@localhost:5432/paperclip"
     echo "DATABASE_URL set to: $DATABASE_URL"
+else
+    echo "Using provided DATABASE_URL"
 fi
 
 echo "Database setup complete"
