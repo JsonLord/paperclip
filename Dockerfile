@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql sudo \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -39,8 +39,9 @@ WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
-  && chmod 777 /paperclip/instances/default/db \
-  && chown -R node:node /paperclip
+  && chown -R node:node /paperclip \
+  && chown -R postgres:postgres /var/lib/postgresql/17 \
+  && mkdir -p /var/log/postgresql && chown postgres:postgres /var/log/postgresql
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
@@ -51,11 +52,34 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  DATABASE_URL="postgres://node@localhost:5432/paperclip"
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-USER node
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+# 创建启动脚本
+COPY << 'EOF' /app/start.sh
+#!/bin/bash
+set -e
+
+# 启动PostgreSQL作为postgres用户
+echo "Starting PostgreSQL..."
+su - postgres -c "/usr/lib/postgresql/17/bin/pg_ctl start -D /var/lib/postgresql/17/main -l /var/log/postgresql/postgresql-17-main.log" || true
+
+# 等待PostgreSQL就绪
+echo "Waiting for PostgreSQL to be ready..."
+for i in $(seq 1 30); do
+    su - postgres -c "/usr/lib/postgresql/17/bin/pg_isready" && break
+    sleep 1
+done
+
+# 设置环境变量
+export DATABASE_URL="postgres://postgres@localhost:5432/paperclip"
+
+# 启动应用
+echo "Starting Paperclip server..."
+exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js
+EOF
+
+RUN chmod +x /app/start.sh
+CMD ["/app/start.sh"]
