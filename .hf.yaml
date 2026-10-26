@@ -5,3 +5,4 @@ build:
     - requirements.txt
 env:
   - COMPANIES_BACKUP_REPO=JsonLord/paperclip-companies-backup
+  - HF_BUILD=true
