@@ -55,8 +55,12 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-COPY --chown=node:node deploy/hf-space/overlay/deploy/ /app/deploy/
-RUN chmod +x /app/deploy/setup-db.sh
+USER root
+RUN pg_ctlcluster 17 main start 2>/dev/null || true \
+  && createdb -U postgres paperclip 2>/dev/null || true \
+  && pg_ctlcluster 17 main stop 2>/dev/null || true \
+  && chown -R node:node /var/lib/postgresql/17/main \
+  && usermod -aG postgres node
 
 USER node
-CMD ["sh", "-c", "/app/deploy/setup-db.sh && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+CMD ["sh", "-c", "pg_ctlcluster 17 main start 2>/dev/null || true; sleep 2; export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\"; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
