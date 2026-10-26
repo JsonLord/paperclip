@@ -1,5 +1,4 @@
 FROM node:lts-trixie-slim AS base
-# Updated for createPostgresUser fix at 1792982731
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
   && rm -rf /var/lib/apt/lists/*
@@ -23,6 +22,8 @@ COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-lo
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
+# Copy patches before install
+COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
 
@@ -41,7 +42,8 @@ COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
   && chmod 777 /paperclip/instances/default/db \
-  && chown -R node:node /paperclip
+  && chown -R node:node /paperclip \
+  && sed -i 's/if (!this.options.createPostgresUser) {/if (this.options.createPostgresUser === false) {/' /app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
@@ -52,13 +54,9 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE=true
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-COPY --chown=node:node start.sh /app/start.sh
-RUN chmod +x /app/start.sh
-CMD ["/app/start.sh"]
-# Force cache bust: $(date +%s)
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
