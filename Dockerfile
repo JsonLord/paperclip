@@ -1,4 +1,5 @@
 FROM node:lts-trixie-slim AS base
+# Updated for createPostgresUser fix at 1792982731
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
   && rm -rf /var/lib/apt/lists/*
