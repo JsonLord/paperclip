@@ -22,7 +22,6 @@ COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-lo
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
-# Copy patches before install
 COPY patches/ patches/
 
 RUN pnpm install --frozen-lockfile
@@ -60,6 +59,3 @@ VOLUME ["/paperclip"]
 EXPOSE 7860
 
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
-
-# Patch embedded-postgres for root environments
-
