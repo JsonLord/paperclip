@@ -46,5 +46,6 @@
     "patchedDependencies": {
       "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"
     }
-  }
+  },
+  "_hf_build": "1792986446.9214547"
 }

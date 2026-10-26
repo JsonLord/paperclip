@@ -24,6 +24,9 @@ COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 COPY patches/ patches/
 
+# Force cache invalidation with build timestamp
+RUN echo "Building Paperclip HF Space at $(date -u +%Y%m%d%H%M%S)"
+
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
@@ -41,8 +44,7 @@ COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
   && chmod 777 /paperclip/instances/default/db \
-  && chown -R node:node /paperclip \
-  && sed -i 's/if (!this.options.createPostgresUser) {/if (this.options.createPostgresUser === false) {/' /app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js
+  && chown -R node:node /paperclip
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
@@ -59,5 +61,3 @@ VOLUME ["/paperclip"]
 EXPOSE 7860
 
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
-# Force cache bust at $(date +%s)
-RUN echo "Building at $(date -u +%Y%m%d%H%M%S)" && sed -i 's/if (!this.options.createPostgresUser) {/if (this.options.createPostgresUser === false) {/' /app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js || true
