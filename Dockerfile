@@ -56,4 +56,5 @@ VOLUME ["/paperclip"]
 EXPOSE 7860
 
 COPY --chown=node:node deploy/hf-space/overlay/deploy/ /app/deploy/
+RUN chmod +x /app/deploy/entrypoint.sh
 ENTRYPOINT ["/app/deploy/entrypoint.sh"]
