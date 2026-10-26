@@ -14,11 +14,13 @@ if ! id postgres >/dev/null 2>&1; then
 fi
 
 # --- locate the bundled PostgreSQL binaries ----------------------------------
-NATIVE_BIN="$(ls -d /app/node_modules/.pnpm/@embedded-postgres+linux-*/*/node_modules/@embedded-postgres/*/native/bin 2>/dev/null | head -1)"
-if [ -z "$NATIVE_BIN" ]; then
+NATIVE_DIR="$(find /app/node_modules/.pnpm -type d -name native -path "*embedded-postgres*" 2>/dev/null | head -1)"
+if [ -z "$NATIVE_DIR" ] || [ ! -x "$NATIVE_DIR/bin/initdb" ]; then
     echo "FATAL: could not locate embedded-postgres native binaries"
+    find /app/node_modules -maxdepth 4 -name "initdb" 2>/dev/null
     exit 1
 fi
+NATIVE_BIN="$NATIVE_DIR/bin"
 echo "Using bundled PostgreSQL binaries: $NATIVE_BIN"
 
 # --- (re)initialise the cluster ourselves ------------------------------------
@@ -36,7 +38,7 @@ chmod 644 "$PWFILE"
 
 echo "Running initdb as 'postgres' (port $PORT)..."
 setpriv --reuid=postgres --regid=postgres --clear-groups \
-  env -i HOME=/tmp LC_MESSAGES=C.UTF-8 \
+  env -i HOME=/tmp LC_MESSAGES=C.UTF-8 LD_LIBRARY_PATH="$NATIVE_DIR/lib" \
   "$NATIVE_BIN/initdb" \
     --pgdata="$DB_DIR" \
     --auth=password \
