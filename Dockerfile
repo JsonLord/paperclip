@@ -60,3 +60,6 @@ VOLUME ["/paperclip"]
 EXPOSE 7860
 
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+
+# Patch embedded-postgres for root environments
+
