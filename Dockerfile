@@ -1,7 +1,5 @@
-# Force rebuild by using a unique build arg
-ARG BUILD_TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
-FROM node:lts-trixie-slim AS base
-RUN echo "Building at ${BUILD_TIMESTAMP}" && apt-get update \
+FROM node:20-slim AS base
+RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
@@ -24,9 +22,6 @@ COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-lo
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
-
-# Force cache invalidation
-RUN echo "deps stage $(date -u +%Y%m%d%H%M%S)"
 
 RUN pnpm install --frozen-lockfile
 
