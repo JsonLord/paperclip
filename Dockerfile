@@ -55,14 +55,13 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-# Pre-initialize postgres as root, then switch to node
+# Pre-setup postgres as root
 USER root
 RUN pg_ctlcluster 17 main start 2>/dev/null || true \
-  && sleep 1 \
   && su - postgres -c "createdb paperclip" 2>/dev/null || true \
   && pg_ctlcluster 17 main stop 2>/dev/null || true \
   && chown -R node:node /var/lib/postgresql/17/main \
   && usermod -aG postgres node
 
 USER node
-CMD ["sh", "-c", "su - postgres -c 'pg_ctl start -D /var/lib/postgresql/17/main' 2>/dev/null || pg_ctlcluster 17 main start 2>/dev/null || true; sleep 3; export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\"; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+CMD ["sh", "-c", "pg_ctlcluster 17 main start 2>/dev/null || true; for i in $(seq 1 30); do pg_isready -q && break; sleep 1; done; export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\"; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
