@@ -57,7 +57,9 @@ EXPOSE 7860
 
 # Pre-setup postgres as root
 USER root
-RUN pg_ctlcluster 17 main start 2>/dev/null || true \
+RUN mkdir -p /var/log/postgresql \
+  && chown postgres:postgres /var/log/postgresql \
+  && pg_ctlcluster 17 main start 2>/dev/null || true \
   && su - postgres -c "createdb paperclip" 2>/dev/null || true \
   && pg_ctlcluster 17 main stop 2>/dev/null || true \
   && chown -R node:node /var/lib/postgresql/17/main \
