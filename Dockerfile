@@ -55,11 +55,5 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-# Set up postgres data directory with proper permissions
-RUN pg_ctlcluster 17 main start 2>/dev/null || true \
-  && mkdir -p /var/lib/postgresql/17/main \
-  && chown -R postgres:postgres /var/lib/postgresql \
-  && chmod 700 /var/lib/postgresql/17/main
-
 USER node
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
