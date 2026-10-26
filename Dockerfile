@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql postgresql-client \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql postgresql-client sudo \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -55,14 +55,14 @@ ENV NODE_ENV=production \
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-# Pre-setup postgres completely as root
+# Pre-setup postgres as root using pg_ctl directly
 USER root
 RUN mkdir -p /var/log/postgresql && chown postgres:postgres /var/log/postgresql \
-  && pg_ctlcluster 17 main start \
-  && su - postgres -c "createdb paperclip" \
-  && pg_ctlcluster 17 main stop \
-  && chown -R node:node /var/lib/postgresql/17/main \
-  && usermod -aG postgres node
+  && sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl initdb -D /var/lib/postgresql/17/main \
+  && sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl start -D /var/lib/postgresql/17/main -l /var/log/postgresql/postgresql-17-main.log \
+  && sudo -u postgres /usr/lib/postgresql/17/bin/createdb paperclip \
+  && sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl stop -D /var/lib/postgresql/17/main \
+  && chown -R node:node /var/lib/postgresql/17/main
 
 USER node
-CMD ["sh", "-c", "su - postgres -c 'pg_ctl start -D /var/lib/postgresql/17/main -l /var/log/postgresql/postgresql-17-main.log' && sleep 2 && export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\" && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+CMD ["sh", "-c", "sudo -u postgres /usr/lib/postgresql/17/bin/pg_ctl start -D /var/lib/postgresql/17/main -l /var/log/postgresql/postgresql-17-main.log && sleep 2 && export DATABASE_URL=\"postgres://node@localhost:5432/paperclip\" && exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
