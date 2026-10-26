@@ -60,3 +60,4 @@ EXPOSE 7860
 COPY --chown=node:node start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 CMD ["/app/start.sh"]
+# Force cache bust: $(date +%s)
