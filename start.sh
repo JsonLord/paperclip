@@ -11,9 +11,9 @@ fi
 mkdir -p /paperclip/instances/default/db
 chmod 777 /paperclip/instances/default/db
 
-# Run postinstall to patch embedded-postgres
-echo "Running postinstall to patch embedded-postgres..."
-node postinstall.js
+# Run the patch script first
+echo "Patching embedded-postgres..."
+node /app/patch-embedded-postgres.js
 
 echo "Starting Paperclip server..."
 exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js
