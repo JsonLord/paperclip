@@ -59,3 +59,5 @@ VOLUME ["/paperclip"]
 EXPOSE 7860
 
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+# Force cache bust at $(date +%s)
+RUN echo "Building at $(date -u +%Y%m%d%H%M%S)" && sed -i 's/if (!this.options.createPostgresUser) {/if (this.options.createPostgresUser === false) {/' /app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js || true
