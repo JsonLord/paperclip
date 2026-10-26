@@ -28,7 +28,15 @@ API="http://127.0.0.1:${PORT}"
 ORIGIN="$API"
 : "${GITHUB_API_URL:=https://api.github.com}"
 
-[ -n "${JULES_API_1:-}${JULES_API_2:-}" ] || { log "no JULES_API_* secrets — skipping"; exit 0; }
+# Trigger on any JULES_API_<n> (n a positive integer), not just _1/_2, so a
+# token-3-only deployment still reseeds on every boot. Uses name-expansion over the
+# variable NAMES only (never their values) and keeps the original non-empty check.
+_jules_any=""
+for _jn in "${!JULES_API_@}"; do
+  case "${_jn#JULES_API_}" in ''|*[!0-9]*) continue ;; esac
+  if [ -n "${!_jn}" ]; then _jules_any=1; break; fi
+done
+[ -n "${_jules_any}" ] || { log "no JULES_API_* secrets — skipping"; exit 0; }
 [ -n "${PAPERCLIP_ADMIN_PASSWORD:-}" ] || { log "PAPERCLIP_ADMIN_PASSWORD unset — cannot authenticate; skipping"; exit 0; }
 [ -n "${GITHUB_TOKEN:-}" ] || { log "no GITHUB_TOKEN — cannot resolve the admin email; skipping"; exit 0; }
 

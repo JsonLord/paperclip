@@ -164,6 +164,24 @@ function parseAllowedIndexes(raw: string | undefined): Map<string, string> {
   return out;
 }
 
+/**
+ * Fail-closed designation for the restrictive allowlist. A company named in
+ * `JULES_REQUIRED_ALLOWLIST_COMPANIES` (comma list) must carry a NON-EMPTY entry in
+ * `JULES_ALLOWED_PROFILE_INDEXES`; if the mapping is missing or mistyped the company
+ * is denied outright. Without this, an omitted/typo'd AUX mapping would silently leave
+ * AUX UNRESTRICTED (every token eligible) — a release failure. Companies not named here
+ * keep the "no entry => unconstrained" behaviour, so HUM and every other company stay
+ * byte-for-byte intact.
+ */
+function requiredAllowlistCompanies(raw: string | undefined): Set<string> {
+  return new Set(
+    (raw ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+}
+
 export function resolveJulesExecutionRequirements(config: Record<string, unknown>, context: Record<string, unknown>) {
   const sessionSpec = config.sessionSpec && typeof config.sessionSpec === "object" ? config.sessionSpec as Partial<JulesSessionSpec> : null;
   const templateId = typeof config.outcomeTemplate === "string" ? config.outcomeTemplate : "";
@@ -245,8 +263,23 @@ export function julesCapacityBroker(db: Db, options: { resolveSecret?: (companyI
       // Matched on the secret ID returned by getByName (metadata only; the secret value
       // is never read here), which is stable across a credential rotation.
       const allowedIndexes = parseAllowedIndexes(process.env.JULES_ALLOWED_PROFILE_INDEXES);
+      // Fail-closed designation: a company that MUST be scoped but has no non-empty
+      // allowlist entry is denied here, before any profile is considered. This makes
+      // an omitted or mistyped restrictive mapping a hard release failure instead of
+      // silently leaving the company unconstrained (all tokens eligible).
+      const requiredCompanies = requiredAllowlistCompanies(process.env.JULES_REQUIRED_ALLOWLIST_COMPANIES);
       let allowedIds: Set<string> | null = null;
-      if (allowedIndexes.has(request.companyId)) {
+      if (requiredCompanies.has(request.companyId)) {
+        const reqIdx = allowedIndexes.get(request.companyId)?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+        if (reqIdx.length === 0) {
+          return denial("NO_PROFILE_AVAILABLE", "Restrictive Jules allowlist is required for this company but not configured (missing or mistyped JULES_ALLOWED_PROFILE_INDEXES entry)", []);
+        }
+        allowedIds = new Set<string>();
+        for (const idx of reqIdx) {
+          const sec = await secrets.getByName(request.companyId, `jules-api-${idx}`);
+          if (sec) allowedIds.add(sec.id);
+        }
+      } else if (allowedIndexes.has(request.companyId)) {
         const idxList = allowedIndexes.get(request.companyId)!.split(",").map((s) => s.trim()).filter(Boolean);
         allowedIds = new Set<string>();
         for (const idx of idxList) {
