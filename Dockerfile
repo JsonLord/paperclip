@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -44,7 +44,7 @@ RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
 ENV NODE_ENV=production \
   HOME=/paperclip \
   HOST=0.0.0.0 \
-  PORT=3100 \
+  PORT=7860 \
   SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \
   PAPERCLIP_INSTANCE_ID=default \
@@ -53,7 +53,7 @@ ENV NODE_ENV=production \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
-EXPOSE 3100
+EXPOSE 7860
 
-USER node
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+COPY --chown=node:node deploy/hf-space/overlay/deploy/ /app/deploy/
+ENTRYPOINT ["/app/deploy/entrypoint.sh"]
