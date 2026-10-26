@@ -288,3 +288,5 @@ MIT &copy; 2026 Paperclip
   <sub>Open source under MIT. Built for people who want to run companies, not babysit agents.</sub>
 </p>
 # Force rebuild
+
+# Build fix attempt 1792986338
