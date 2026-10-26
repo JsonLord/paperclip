@@ -39,7 +39,6 @@ WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
-  && chmod 777 /paperclip/instances/default/db \
   && chown -R node:node /paperclip
 
 ENV NODE_ENV=production \
@@ -51,11 +50,11 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE=true
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-USER node
-CMD ["sh", "-c", "rm -rf /paperclip/instances/default/db/* 2>/dev/null; exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js"]
+COPY --chown=node:node deploy/hf-space/overlay/deploy/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
