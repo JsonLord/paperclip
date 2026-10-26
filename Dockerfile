@@ -22,12 +22,9 @@ COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-lo
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
-COPY patches/ patches/
 
-# Force cache invalidation with build timestamp
-RUN echo "Building Paperclip HF Space at $(date -u +%Y%m%d%H%M%S)"
-
-RUN pnpm install --frozen-lockfile
+# Run install without frozen lockfile to allow patches
+RUN pnpm install
 
 FROM base AS build
 WORKDIR /app
