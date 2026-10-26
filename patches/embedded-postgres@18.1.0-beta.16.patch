@@ -1,9 +1,0 @@
-# This is a placeholder patch file
-# The actual patch content would go here
-diff --git a/package.json b/package.json
-index 1234567..abcdefg 100644
---- a/package.json
-+++ b/package.json
-@@ -1 +1 @@
--{}
-+{"patched": true}
