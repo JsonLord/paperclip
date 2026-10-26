@@ -1,4 +1,4 @@
-FROM node:20-slim AS base
+FROM node:lts-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
   && rm -rf /var/lib/apt/lists/*
@@ -37,10 +37,15 @@ RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" &
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
+# The 'postgres' system user makes embedded-postgres root-safe:
+# checkForRootUser() returns early when `id -u postgres` succeeds, and
+# initialise()/start() spawn initdb/postgres setuid'd to that user.
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
+  && (getent group postgres || groupadd -r postgres) \
+  && (id postgres >/dev/null 2>&1 || useradd -r -g postgres -d /nonexistent -s /usr/sbin/nologin postgres) \
   && mkdir -p /paperclip/instances/default/db \
-  && chmod 777 /paperclip/instances/default/db \
-  && chown -R node:node /paperclip
+  && chown -R node:node /paperclip \
+  && chown -R postgres:postgres /paperclip/instances/default/db
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
@@ -51,9 +56,13 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+  PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE=true \
+  PAPERCLIP_MIGRATION_AUTO_APPLY=true
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
 
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+COPY --chown=node:node start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+CMD ["/app/start.sh"]
