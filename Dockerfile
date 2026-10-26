@@ -1,6 +1,6 @@
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx postgresql sudo \
+  && apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-venv pipx \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
@@ -39,9 +39,8 @@ WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
   && mkdir -p /paperclip/instances/default/db \
-  && chown -R node:node /paperclip \
-  && chown -R postgres:postgres /var/lib/postgresql/17 \
-  && mkdir -p /var/log/postgresql && chown postgres:postgres /var/log/postgresql
+  && chmod 777 /paperclip/instances/default/db \
+  && chown -R node:node /paperclip
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
@@ -52,7 +51,8 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+  PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE=true
 
 VOLUME ["/paperclip"]
 EXPOSE 7860
