@@ -13,14 +13,22 @@ chmod 777 /paperclip/instances/default/db
 
 # 在启动前应用 embedded-postgres 补丁
 echo "Applying embedded-postgres patch..."
-patch_file="/app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js"
-if [ -f "$patch_file" ]; then
-    if ! grep -q "Auto-create postgres user" "$patch_file"; then
-        sed -i '/if (this.isRootUser) {/a\                this.options.createPostgresUser = true;\n                yield this.getUidAndGid();' "$patch_file"
-        echo "Patched embedded-postgres!"
+EP_FILE="/app/node_modules/.pnpm/embedded-postgres@18.1.0-beta.16/node_modules/embedded-postgres/dist/index.js"
+if [ -f "$EP_FILE" ]; then
+    if ! grep -q "createPostgresUser = true" "$EP_FILE"; then
+        echo "Patching embedded-postgres to auto-create postgres user..."
+        # 使用 sed 在 checkForRootUser 方法中添加自动创建用户的逻辑
+        sed -i 's/if (!this.isRootUser) {/if (!this.isRootUser) {\n                return;\n            }\n            \/\/ Auto-enable createPostgresUser for root environments/g; s/return;\n            }/}/' "$EP_FILE" 2>/dev/null || true
+        # 确保 createPostgresUser 被设置
+        if ! grep -q "createPostgresUser = true" "$EP_FILE"; then
+            sed -i '/if (!this.options.createPostgresUser) {/i\                this.options.createPostgresUser = true;\n                yield this.getUidAndGid();' "$EP_FILE"
+        fi
+        echo "embedded-postgres patched!"
     else
         echo "embedded-postgres already patched."
     fi
+else
+    echo "embedded-postgres file not found at $EP_FILE"
 fi
 
 echo "Starting Paperclip server with embedded PostgreSQL..."
