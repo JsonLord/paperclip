@@ -21,7 +21,6 @@ COPY packages/adapters/openclaw-gateway/package.json packages/adapters/openclaw-
 COPY packages/adapters/opencode-local/package.json packages/adapters/opencode-local/
 COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/adapters/jules/package.json packages/adapters/jules/
-COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 
 RUN pnpm install --frozen-lockfile
 
@@ -30,39 +29,29 @@ WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
 RUN pnpm --filter @paperclipai/ui build
-RUN pnpm --filter @paperclipai/plugin-sdk build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-# The 'postgres' system user makes embedded-postgres root-safe:
-# checkForRootUser() returns early when `id -u postgres` succeeds, and
-# initialise()/start() spawn initdb/postgres setuid'd to that user.
 RUN PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install hermes-agent \
-  && (getent group postgres || groupadd -r postgres) \
-  && (id postgres >/dev/null 2>&1 || useradd -r -g postgres -d /nonexistent -s /usr/sbin/nologin postgres) \
-  && mkdir -p /paperclip/instances/default/db \
-  && chown -R node:node /paperclip \
-  && chown -R postgres:postgres /paperclip/instances/default/db
+  && mkdir -p /paperclip \
+  && chown node:node /paperclip
 
 ENV NODE_ENV=production \
   HOME=/paperclip \
   HOST=0.0.0.0 \
-  PORT=7860 \
+  PORT=3100 \
   SERVE_UI=true \
   PAPERCLIP_HOME=/paperclip \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE=true \
-  PAPERCLIP_MIGRATION_AUTO_APPLY=true
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/paperclip"]
-EXPOSE 7860
+EXPOSE 3100
 
-COPY --chown=node:node start.sh /app/start.sh
-RUN chmod +x /app/start.sh
-CMD ["/app/start.sh"]
+USER node
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
