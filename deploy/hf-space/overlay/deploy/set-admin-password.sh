@@ -2,17 +2,20 @@
 # Keep the operator's password credential verifiable by the better-auth that is actually
 # installed, on every boot.
 #
-# Why this exists: a restored companies dump carries a password hash written by whatever
-# better-auth version last saved it. better-auth's verifyPassword() recomputes the scrypt
-# digest with the *installed* library's parameters (1.4.18: N=16384 r=16 p=1 dkLen=64,
-# stored as "salt_hex:key_hex" with a 128-char key). A row from an older build using
-# dkLen=32 (64-char key) can therefore never verify. The symptom is confusing because the
-# user row and the instance_admin grant are both intact: sign-in returns 401 "Invalid
-# password" while sign-up returns 422 "user exists", so the account looks locked.
+# Why this exists: a restored companies dump carries the password credential from
+# whenever the backup was taken, and seed-admin.sh is skipped whenever an admin already
+# exists ("instance admin already present — skipping bootstrap"). The configured
+# PAPERCLIP_ADMIN_PASSWORD therefore never reaches the row and sign-in fails with 401
+# "Invalid password" while sign-up fails with 422 "user already exists", because the
+# account and its instance_admin grant are both perfectly intact. Writing the configured
+# password here — on every boot, before anything tries to sign in — makes the deployment
+# own the credential instead of the dump.
 #
-# Re-hashing against the installed library makes the credential match the verifier.
-# Without PAPERCLIP_ADMIN_PASSWORD this is a no-op — it never invents a password and
-# never downgrades an existing working one.
+# The hash is produced by the installed better-auth itself (better-auth/crypto), never
+# by hand: verifyPassword() recomputes with the library's own parameters, so the digest
+# must come from the same library that will check it.
+#
+# Without PAPERCLIP_ADMIN_PASSWORD this is a no-op — it never invents a password.
 set -uo pipefail
 log() { echo "[set-admin-password $(date -uIseconds)] $*"; }
 
