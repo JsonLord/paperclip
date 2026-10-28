@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
+import { sanitizeLogValue, sanitizeRequestBody } from "../redaction.js";
 
 export interface ErrorContext {
   error: { message: string; stack?: string; name?: string; details?: unknown; raw?: unknown };
@@ -18,12 +19,12 @@ function attachErrorContext(
   rawError?: Error,
 ) {
   (res as any).__errorContext = {
-    error: payload,
+    error: { ...payload, details: sanitizeLogValue(payload.details), raw: sanitizeLogValue(payload.raw) },
     method: req.method,
     url: req.originalUrl,
-    reqBody: req.body,
-    reqParams: req.params,
-    reqQuery: req.query,
+    reqBody: sanitizeRequestBody(req.originalUrl, req.body),
+    reqParams: sanitizeLogValue(req.params),
+    reqQuery: sanitizeLogValue(req.query),
   } satisfies ErrorContext;
   if (rawError) {
     (res as any).err = rawError;

@@ -5,7 +5,6 @@ const logoAssetIdSchema = z.string().uuid().nullable().optional();
 
 export const createCompanySchema = z.object({
   name: z.string().min(1),
-  mode: z.enum(["legacy", "idea_validation"]).optional(),
   description: z.string().optional().nullable(),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   firmGithubRepo: z.string().min(1).nullable().optional(),

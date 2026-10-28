@@ -57,7 +57,7 @@ export function julesEnvProfileService(db: Db) {
     const keys = envKeys();
     if (!keys.length) return { created: 0, reused: 0, rotated: 0, unreadable: 0, profileIds: [] as string[] };
 
-    const sessionStartLimit = Number(process.env.JULES_SESSION_START_LIMIT ?? 90);
+    const sessionStartLimit = Number(process.env.JULES_SESSION_START_LIMIT ?? 15);
     const sessionStartWindowSec = Number(process.env.JULES_SESSION_WINDOW_SEC ?? 86_400);
     // Opt-in: push the current env value as a new version when a key was rotated in the
     // deployment's settings. Off by default so a restart loop does not pile up versions.
@@ -126,7 +126,7 @@ export function julesEnvProfileService(db: Db) {
 
       const [profile] = await db
         .insert(julesProfiles)
-        .values({ name: profileName, secretRef: secret.id, sessionStartLimit, sessionStartWindowSec, reserveSessionStarts: 0, capabilities })
+        .values({ name: profileName, secretRef: secret.id, sessionStartLimit, sessionStartWindowSec, capabilities })
         .returning();
       profileIds.push(profile.id);
       created += 1;

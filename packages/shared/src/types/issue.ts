@@ -8,7 +8,6 @@ export interface IssueAncestorProject {
   id: string;
   name: string;
   description: string | null;
-  validationTask?: import("../validation.js").ValidationTask | null;
   status: string;
   goalId: string | null;
   workspaces: ProjectWorkspace[];

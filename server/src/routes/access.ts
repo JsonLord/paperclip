@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
+import { adminApiTokenStatus } from "../auth/admin-api-token.js";
 import type { Request } from "express";
 import { and, eq, isNull, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -1545,6 +1546,11 @@ export function accessRoutes(
     const allowed = await access.isInstanceAdmin(req.actor.userId);
     if (!allowed) throw forbidden("Instance admin required");
   }
+
+  router.get("/admin/api-token/status", async (req, res) => {
+    await assertInstanceAdmin(req);
+    res.json(await adminApiTokenStatus(db));
+  });
 
   router.get("/board-claim/:token", async (req, res) => {
     const token = (req.params.token as string).trim();

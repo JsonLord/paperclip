@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
+import { sanitizeLogValue, sanitizeRequestBody } from "../redaction.js";
 import { readConfigFile } from "../config-file.js";
 import { resolveDefaultLogsDir, resolveHomeAwarePath } from "../home-paths.js";
 
@@ -26,8 +27,13 @@ const sharedOpts = {
   singleLine: true,
 };
 
+export const HTTP_CREDENTIAL_REDACTION = [
+  "req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]',
+];
+
 export const logger = pino({
   level: "debug",
+  redact: { paths: HTTP_CREDENTIAL_REDACTION, censor: "[REDACTED]" },
 }, pino.transport({
   targets: [
     {
@@ -63,22 +69,22 @@ export const httpLogger = pinoHttp({
       const ctx = (res as any).__errorContext;
       if (ctx) {
         return {
-          errorContext: ctx.error,
-          reqBody: ctx.reqBody,
-          reqParams: ctx.reqParams,
-          reqQuery: ctx.reqQuery,
+          errorContext: sanitizeLogValue(ctx.error),
+          reqBody: sanitizeRequestBody((req as any).originalUrl || req.url, ctx.reqBody ?? (req as any).body),
+          reqParams: sanitizeLogValue(ctx.reqParams ?? (req as any).params),
+          reqQuery: sanitizeLogValue(ctx.reqQuery ?? (req as any).query),
         };
       }
       const props: Record<string, unknown> = {};
       const { body, params, query } = req as any;
       if (body && typeof body === "object" && Object.keys(body).length > 0) {
-        props.reqBody = body;
+        props.reqBody = sanitizeRequestBody((req as any).originalUrl || req.url, body);
       }
       if (params && typeof params === "object" && Object.keys(params).length > 0) {
-        props.reqParams = params;
+        props.reqParams = sanitizeLogValue(params);
       }
       if (query && typeof query === "object" && Object.keys(query).length > 0) {
-        props.reqQuery = query;
+        props.reqQuery = sanitizeLogValue(query);
       }
       if ((req as any).route?.path) {
         props.routePath = (req as any).route.path;

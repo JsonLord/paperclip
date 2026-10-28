@@ -1,7 +1,6 @@
-import { classifyValidationOutcome } from "./validation/runtime.js";
 import { and, eq, gte } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { approvals, documents, issueComments, issueWorkProducts, julesSessions, companies, nodepadBindings, validationRecords, githubActionRuns } from "@paperclipai/db";
+import { approvals, documents, issueComments, issueWorkProducts, julesSessions } from "@paperclipai/db";
 
 /**
  * Did this run leave anything behind?
@@ -25,7 +24,6 @@ export interface RunProductivity {
   assessed: boolean;
   produced: boolean;
   signals: ProductivitySignal[];
-  materialOutcome?: ReturnType<typeof classifyValidationOutcome>;
 }
 
 export function runProductivityService(db: Db) {
@@ -69,17 +67,6 @@ export function runProductivityService(db: Db) {
       signals.push("approval");
     }
 
-    const company = await db.select().from(companies).where(eq(companies.id, input.companyId)).limit(1).then(rows => rows[0]);
-    if (company?.mode === "idea_validation") {
-      const candidates = await db.select().from(validationRecords).where(and(eq(validationRecords.companyId, input.companyId), eq(validationRecords.kind, "nodepad_candidate"), eq(validationRecords.status, "accepted"), gte(validationRecords.updatedAt, since)));
-      const actions = await db.select().from(githubActionRuns).where(eq(githubActionRuns.paperclipRunId, input.runId));
-      const pipelineRefs = new Set([input.runId, ...actions.map(a => `github-actions:${a.id}`)]);
-      const own = candidates.filter(c => pipelineRefs.has(String((c.payload.candidate as Record<string, unknown>)?.pipelineRunRef)));
-      const snapshot = await db.select().from(nodepadBindings).where(eq(nodepadBindings.companyId, input.companyId)).then(rows => rows[0]?.snapshot);
-      const products = await db.select().from(issueWorkProducts).where(and(eq(issueWorkProducts.companyId, input.companyId), eq(issueWorkProducts.createdByRunId, input.runId), eq(issueWorkProducts.status, "accepted")));
-      const materialOutcome = classifyValidationOutcome({ evidenceAccepted: own.length > 0, hypothesisMoved: own.some(c => snapshot?.materialChanges.includes(String((c.payload.candidate as Record<string, unknown>)?.hypothesisId))), reusableArtifact: products.length > 0, maintenance: signals.length > 0 });
-      return { assessed: true, produced: signals.length > 0, signals, materialOutcome };
-    }
     return { assessed: true, produced: signals.length > 0, signals };
   }
 

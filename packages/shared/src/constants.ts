@@ -32,10 +32,9 @@ export const AGENT_ADAPTER_TYPES = [
   "openclaw_gateway",
   "hermes_local",
   "jules",
-  "github-actions",
 ] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
-export const ACTIVE_AGENT_ADAPTER_TYPES = ["hermes_local", "jules", "github-actions"] as const;
+export const ACTIVE_AGENT_ADAPTER_TYPES = ["hermes_local", "jules"] as const;
 
 export const JULES_PROFILE_STATUSES = ["active", "degraded", "quota_exhausted", "auth_required", "source_access_missing", "cooldown", "disabled"] as const;
 export const JULES_SESSION_STATUSES = ["queued", "planning", "awaiting_plan_approval", "awaiting_user_feedback", "in_progress", "paused", "failed", "completed", "cancelled", "orphaned"] as const;

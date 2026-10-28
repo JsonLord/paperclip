@@ -227,3 +227,19 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export {
+  acquireControllerLeaseSchema,
+  verifyControllerLeaseSchema,
+  releaseControllerLeaseSchema,
+  type AcquireControllerLease,
+  type VerifyControllerLease,
+  type ReleaseControllerLease,
+} from "./controller-lease.js";
+
+export {
+  activateDispatchSchema,
+  reconcileDispatchSchema,
+  type ActivateDispatch,
+  type ReconcileDispatch,
+} from "./dispatch-ledger.js";

@@ -41,7 +41,6 @@ export function founderOsBootstrapService(db: Db, options: FounderOsBootstrapOpt
     const company = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1).then((r) => r[0]); if (!company) throw new Error("Company not found");
     const existing = await db.select().from(founderosBootstraps).where(and(eq(founderosBootstraps.companyId, companyId), eq(founderosBootstraps.contextVersion, FOUNDEROS_CONTEXT_VERSION))).limit(1).then((r) => r[0]);
     if (existing?.nativeIds) return { bootstrap: existing, nativeIds: existing.nativeIds, idempotent: true };
-    if(company.mode==="idea_validation")throw new Error("Validation Programme owns the Agency workforce; legacy bootstrap cannot add duplicate workers");
     const source = await options.sourceResolver.resolve(repo.repository);
     const overview = repo.paths.includes("company/OVERVIEW.md") ? await repo.readText("company/OVERVIEW.md") : null;
     const hasWebsite = repo.paths.some((p) => p === "website" || p.startsWith("website/"));

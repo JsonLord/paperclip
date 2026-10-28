@@ -1,6 +1,3 @@
-import { workforceRoutes } from "./routes/workforce.js";
-import { registerGithubActionsAdapter } from "./adapters/registry.js";
-import { validationRoutes } from "./routes/validation.js";
 import express, { Router, type Request as ExpressRequest } from "express";
 import path from "node:path";
 import fs from "node:fs";
@@ -12,10 +9,12 @@ import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
+import { apiDocsRoutes } from "./routes/api-docs.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { firmRoutes } from "./routes/firm.js";
 import { julesRoutes } from "./routes/jules.js";
+import { supervisorRoutes } from "./routes/supervisor.js";
 import { customerDiscoveryRoutes } from "./routes/customer-discovery.js";
 import { marketIntelligenceRoutes } from "./routes/market-intelligence.js";
 import { offerDemandRoutes } from "./routes/offer-demand.js";
@@ -94,7 +93,6 @@ export async function createApp(
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
 ) {
-  registerGithubActionsAdapter(db);
   const app = express();
 
   app.use(express.json({
@@ -116,6 +114,7 @@ export async function createApp(
       bindHost: opts.bindHost,
     }),
   );
+  app.use(apiDocsRoutes());
   app.use(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
@@ -157,10 +156,9 @@ export async function createApp(
     }),
   );
   api.use("/companies", companyRoutes(db));
-  api.use(validationRoutes(db));
-  api.use(workforceRoutes(db));
   api.use("/companies", firmRoutes(db));
   api.use(julesRoutes(db));
+  api.use(supervisorRoutes(db));
   api.use(customerDiscoveryRoutes(db));
   api.use(marketIntelligenceRoutes(db));
   api.use(offerDemandRoutes(db));

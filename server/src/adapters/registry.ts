@@ -1,5 +1,3 @@
-import type { Db } from "@paperclipai/db";
-import { createGithubActionsAdapter } from "../services/validation/github-actions.js";
 import type { ServerAdapterModule } from "./types.js";
 import {
   execute as hermesExecute,
@@ -45,7 +43,7 @@ const adaptersByType = new Map(adapters.map((adapter) => [adapter.type, adapter]
 
 export function getServerAdapter(type: string): ServerAdapterModule {
   const adapter = findServerAdapter(type);
-  if (!adapter) throw new Error(`Unsupported adapter type: ${type}. This FounderOS build supports hermes_local, jules and configured github-actions.`);
+  if (!adapter) throw new Error(`Unsupported adapter type: ${type}. This FounderOS build supports only hermes_local and jules.`);
   return adapter;
 }
 
@@ -65,11 +63,4 @@ export function listServerAdapters(): ServerAdapterModule[] {
 
 export function findServerAdapter(type: string): ServerAdapterModule | null {
   return adaptersByType.get(type) ?? null;
-}
-
-export function registerGithubActionsAdapter(db: Db) {
-  const adapter = createGithubActionsAdapter(db);
-  adaptersByType.set(adapter.type, adapter);
-  const index = adapters.findIndex(a => a.type === adapter.type);
-  if (index < 0) adapters.push(adapter); else adapters[index] = adapter;
 }

@@ -1,7 +1,5 @@
 # Paperclip V1 Implementation Spec
 
-For the opt-in idea-validation company mode, [VALIDATION-CONTROL-PLANE.md](./VALIDATION-CONTROL-PLANE.md) is the implementation contract. Product engineering stays outside that mode.
-
 Status: Implementation contract for first release (V1)
 Date: 2026-02-17
 Audience: Product, engineering, and agent-integration authors

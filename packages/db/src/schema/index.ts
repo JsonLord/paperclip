@@ -72,6 +72,6 @@ export { pitchDecks } from "./pitch.js";
 export { publishingAccounts, contentCandidates, socialPublications, contentStrategies, gtmCampaigns, contentAtoms, campaignEvents } from "./content_publishing.js";
 export { crowdfundingCampaigns, crowdfundingEvents } from "./crowdfunding.js";
 
-export { validationProgrammes, validationRecords, nodepadBindings, githubActionRuns, julesPools } from "./validation.js";
+export { controllerLeases } from "./controller_leases.js";
 
-export { workforceImports, workforceMembers, workforceActivations } from "./workforce.js";
+export { dispatchIntents } from "./dispatch_intents.js";

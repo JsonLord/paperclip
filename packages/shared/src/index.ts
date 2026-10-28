@@ -276,6 +276,11 @@ export {
   updateAgentInstructionsPathSchema,
   createAgentKeySchema,
   wakeAgentSchema,
+  acquireControllerLeaseSchema,
+  verifyControllerLeaseSchema,
+  releaseControllerLeaseSchema,
+  activateDispatchSchema,
+  reconcileDispatchSchema,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
@@ -475,7 +480,3 @@ export {
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
 } from "./config-schema.js";
-
-export * from "./validation.js";
-
-export * from "./workforce.js";
